@@ -189,8 +189,8 @@ details.kd>summary::-webkit-details-marker{display:none}details.kd[open]>summary
 <main id="view"><p class="mute">Đang tải…</p></main>
 <div id="modal"><div id="mbox"></div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>window.MCT_API='https://script.google.com/macros/s/AKfycbxYx-k_21uix6zZPy-gmdNRodOUNYvNSuBsyvTuc1ALmlWnviqfzMe1ckdJImNWQcdwgQ/exec';</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 const REASONS=[
  {code:'ST01',name:'Thay dao'},{code:'ST02',name:'Máy hỏng'},{code:'ST03',name:'Sửa kích thước'},
@@ -652,11 +652,10 @@ function renderSettings(){
  <textarea id="cg">${esc(g)}</textarea>
  <h3 style="margin-top:14px">Model và dao</h3><p class="mute">Mỗi dòng: Mã hàng | Mã:Tên dao:Tuổi thọ chuẩn, … | số máy (chỉ để xem, tự tính theo MES) | Tên hàng. Ví dụ dao: T01:Dao phá:1500</p>
  <textarea id="cm">${esc(m)}</textarea>
- <h3 style="margin-top:14px">Danh mục máy (loại, nhóm kỹ thuật, nhóm sản lượng)</h3><p class="mute">Mỗi dòng: Mã máy | Loại máy | Nhóm kỹ thuật | Nhóm sản lượng. Báo cáo dùng để tính tỉ lệ hoạt động theo loại và theo nhóm.</p>
- <textarea id="cmm" style="min-height:160px">${esc(Object.keys(S.cfg.machines||{}).sort().map(k=>`${k} | ${S.cfg.machines[k].t} | ${S.cfg.machines[k].k||''} | ${S.cfg.machines[k].s||''}`).join('\n'))}</textarea>
- <h3 style="margin-top:14px">Máy OP1 (không nhập sản lượng)</h3><p class="mute">Dán danh sách mã máy, mỗi dòng một máy hoặc cách nhau dấu phẩy. Dán thẳng một cột từ Excel được. Hiện ${(S.cfg.op1||[]).length} máy.</p>
- <textarea id="co">${esc((S.cfg.op1||[]).join('\n'))}</textarea><div class="err" id="er"></div>
- <div class="row"><button class="btn primary" data-a="savecfg">Lưu cài đặt</button></div></div>${memberCard()}${mesCard()}${tplCard()}`}
+ <h3 style="margin-top:14px">Danh mục máy (loại, nhóm kỹ thuật, nhóm sản lượng)</h3><p class="mute">Mỗi dòng: Mã máy | Loại máy | Nhóm kỹ thuật | Nhóm sản lượng | OP1. Ghi <b>x</b> ở cột OP1 nếu máy chạy OP1 (không nhập sản lượng), để trống nếu không. Dán thẳng nhiều dòng từ Excel được (dấu | hoặc Tab). Hiện ${(S.cfg.op1||[]).length} máy OP1.</p>
+ <textarea id="cmm" style="min-height:160px">${esc(Object.keys(S.cfg.machines||{}).sort().map(k=>`${k} | ${S.cfg.machines[k].t} | ${S.cfg.machines[k].k||''} | ${S.cfg.machines[k].s||''} | ${(S.cfg.op1||[]).includes(k)?'x':''}`).join('\n'))}</textarea>
+ <div class="err" id="er"></div>
+ <div class="row"><button class="btn primary" data-a="savecfg">Lưu cài đặt</button></div></div>${mcCard()}${memberCard()}${mesCard()}${tplCard()}`}
 
 async function saveCfg(){
  const er=$('#er');er.textContent='';
@@ -671,12 +670,11 @@ async function saveCfg(){
    const tools=(p[1]||'').split(',').map(s=>s.trim()).filter(Boolean).map(t=>{const q=t.split(':').map(s=>s.trim());
     if(q.length<3||isNaN(+q[2]))throw new Error('Dao sai định dạng: '+t);return{code:q[0],name:q[1],life:+q[2]}});
    return{name:p[0],tools,title:(p[3]||'').slice(0,80)}});
-  const op1=[...new Set($('#co').value.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean))];
-  op1.forEach(x=>{if(!/^[A-Za-z0-9_\-]+$/.test(x))throw new Error('Mã máy OP1 không hợp lệ: '+x)});
-  const machines={};
-  $('#cmm').value.split('\n').map(x=>x.trim()).filter(Boolean).forEach(l=>{const p=l.split('|').map(x=>x.trim());
-   if(p.length<2||!/^[A-Za-z0-9_\-]+$/.test(p[0]))throw new Error('Dòng danh mục máy sai (Mã máy | Loại | Kỹ thuật | Sản lượng): '+l);
-   machines[p[0]]={t:p[1],k:p[2]||'',s:p[3]||''}});
+  const machines={},op1=[];
+  $('#cmm').value.split('\n').map(x=>x.trim()).filter(Boolean).forEach(l=>{const p=l.split(/\s*\|\s*|\t/).map(x=>x.trim());
+   if(p.length<2||!/^[A-Za-z0-9_\-]+$/.test(p[0]))throw new Error('Dòng danh mục máy sai (Mã máy | Loại | Kỹ thuật | Sản lượng | OP1): '+l);
+   machines[p[0]]={t:p[1],k:p[2]||'',s:p[3]||''};if(/^(x|1|true|op1)$/i.test(p[4]||''))op1.push(p[0])});
+  (S.cfg.op1||[]).forEach(m=>{if(!machines[m]&&!op1.includes(m))op1.push(m)});
   const keys=new Set([...groups.map(g=>g.dept+'|'+g.name),'KHO|Thủ kho']),members=Object.fromEntries(Object.entries(S.cfg.members||{}).filter(([k])=>keys.has(k)));
   await db.doc('config/main').set({groups,models,members,op1,assign:S.cfg.assign||{},machines});toast('Đã lưu cài đặt.')
  }catch(e){er.textContent=e.message}}
@@ -982,6 +980,9 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-a]')
   if(a==='rejreq'){if(!isKeeper()){toast('Chỉ thủ kho được từ chối.');return}rejModal(t.dataset.id);return}
   if(!isKeeper()){toast('Chỉ thủ kho được thực hiện thao tác này.');return}
   if(a==='tplapply'){if(!isAdmin){toast('Chỉ admin được nạp file.');return}const r=window._tpl;if(!r||r.errs.length){toast('Chưa có dữ liệu hợp lệ để nạp.');return}t.disabled=true;
+  if(a==='mcdl'){if(!window.XLSX){toast('Chưa tải được thư viện Excel.');return}mcDownload();return}
+  if(a==='mcapply'){if(!isAdmin){toast('Chỉ admin được cập nhật.');return}const r=window._mc;if(!r||r.errs.length){toast('Chưa có dữ liệu hợp lệ.');return}t.disabled=true;
+   try{await applyCatalog(r);window._mc=null;$('#mcout').innerHTML='<div class="banner">Đã cập nhật danh mục máy.</div>';toast('Đã cập nhật danh mục máy.')}catch(x){t.disabled=false;$('#mcout').innerHTML='<div class="err">Lỗi ghi: '+esc(x.message||x.code||String(x))+'. Bấm lại để thử lại.</div>'}return}
    try{const n=await applyTemplate(r,(i,m)=>{$('#tplout').innerHTML='<div class="banner">Đang nạp '+i+'/'+m+'… đừng đóng trang.</div>'});window._tpl=null;$('#tplout').innerHTML='<div class="banner">Đã nạp xong.</div>';toast('Đã nạp dữ liệu từ file Excel.')}catch(x){t.disabled=false;$('#tplout').innerHTML='<div class="err">Nạp bị dừng giữa chừng: '+esc(x.message||x.code||String(x))+'. Bấm Nạp lại: phần đã nạp không bị nhập đôi.</div>'+'<div class="row"><button class="btn primary" data-a="tplapply">Nạp lại</button></div>'}return}
   if(a==='savecat'){await saveCat();return}
   if(a==='doin'){const er=$('#er');er.textContent='';const c=resolveItem($('#ic').value),q=+$('#iq').value;if(!c){er.textContent='Chọn mã vật tư có trong danh mục.';return}
@@ -992,7 +993,69 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-a]')
     t.disabled=true;let n=0;for(const p of rows){await doIn(p[0],+p[1],p[2]||'');n++}$('#ib').value='';toast('Đã nhập '+n+' dòng.')}catch(x){er.textContent=x.message}t.disabled=false;return}
  }catch(err){toast('Lỗi: '+(err.message||err.code||err))}});
 
-const KHO_A=['directout','tplapply','hc','hscan','qreq','qin','iscan','kho','kg','kh','kp','item','newreq','givereq','rejreq','kcsv','doin','doinbulk','savecat'];
+const KHO_A=['directout','tplapply','mcapply','mcdl','hc','hscan','qreq','qin','iscan','kho','kg','kh','kp','item','newreq','givereq','rejreq','kcsv','doin','doinbulk','savecat'];
+/* ---------- CẬP NHẬT DANH MỤC MÁY / PHỤ TRÁCH / MODEL ---------- */
+function mcCard(){
+ return`<div class="card" style="margin-top:10px"><h3>Cập nhật danh mục máy, người phụ trách, model</h3><p class="mute">Dùng khi đổi người phụ trách (2 tuần/lần), đổi nhóm máy hoặc thêm model. Bấm <b>Tải file hiện tại</b> để lấy file Excel đang dùng, sửa rồi tải lên. Có 3 sheet: DM_May (loại máy, nhóm, OP1), PhuTrach (người phụ trách từng nhóm), Model_Dao (dao theo model). Sheet nào không có thì bỏ qua. Máy không có trong file được giữ nguyên, không bị xoá.</p>
+ <div class="row"><button class="btn" data-a="mcdl">Tải file hiện tại</button></div>
+ <input type="file" id="mcfile" accept=".xlsx,.xls,.csv" style="width:100%;margin-top:8px"><div id="mcout" style="margin-top:8px"></div></div>`}
+const deptOf=v=>{v=String(v||'').trim().toLowerCase();return v==='sl'||v==='sản lượng'?'SL':v==='kt'||v==='kỹ thuật'?'KT':''};
+function mcDownload(){
+ const cfg=S.cfg,gn=(dept,m)=>(cfg.groups.find(g=>(g.dept||'SL')===dept&&(g.machines||[]).includes(m))||{}).name||'';
+ const op=new Set(cfg.op1||[]);
+ const may=[['Mã máy','Loại máy','Nhóm kỹ thuật','Nhóm sản lượng','OP1 (x)']].concat(Object.keys(cfg.machines||{}).sort(natural).map(m=>{const o=cfg.machines[m];return[m,o.t||'',o.k||gn('KT',m),o.s||gn('SL',m),op.has(m)?'x':'']}));
+ const pt=[['Bộ phận (SL/KT)','Tên nhóm','Người phụ trách']].concat(cfg.groups.map(g=>[g.dept||'SL',g.name,g.manager||'']));
+ const md=[['Mã hàng (model)','Mã dao','Tên dao','Tuổi thọ chuẩn (pcs)','Tên hàng']];
+ (cfg.models||[]).forEach(m=>{if(!(m.tools||[]).length)md.push([m.name,'','','',m.title||'']);(m.tools||[]).forEach(t=>md.push([m.name,t.code,t.name||'',t.life,m.title||'']))});
+ const wb=XLSX.utils.book_new();[['DM_May',may],['PhuTrach',pt],['Model_Dao',md]].forEach(([n,a])=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(a),n));
+ XLSX.writeFile(wb,'MCT_DanhMuc_'+new Date().toISOString().slice(0,10)+'.xlsx')}
+function parseCatalog(wb){
+ const T=v=>String(v==null?'':v).trim(),wb2={Sheets:{}},names={};
+ const hdr=(ws,must)=>{const A=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});const r=A.find(r=>r.some(x=>T(x)===must));return r?r.map(T):null};
+ wb.SheetNames.forEach(n=>{const ws=wb.Sheets[n];
+  if(!wb2.Sheets.DM_May&&hdr(ws,'Mã máy')){wb2.Sheets.DM_May=ws;names.may=n}
+  else if(!wb2.Sheets.Model_Dao&&hdr(ws,'Mã hàng (model)')){wb2.Sheets.Model_Dao=ws;names.md=n}
+  else if(!names.pt&&hdr(ws,'Tên nhóm')){names.pt=n}});
+ const res=parseTemplate(wb2);res.managers=[];res.hasOp1=false;res.names=names;
+ if(names.may){const h=hdr(wb2.Sheets.DM_May,'Mã máy');res.hasOp1=h.includes('OP1 (x)')}
+ if(names.pt){const A=XLSX.utils.sheet_to_json(wb.Sheets[names.pt],{header:1,defval:''});const hi=A.findIndex(r=>r.some(x=>T(x)==='Tên nhóm'));const H=A[hi].map(T);
+  const ci=H.findIndex(x=>/^Bộ phận/.test(x)),cn=H.indexOf('Tên nhóm'),cm=H.findIndex(x=>/^Người phụ trách/.test(x));
+  if(cm<0)res.errs.push('PhuTrach: thiếu cột "Người phụ trách"');
+  else A.slice(hi+1).forEach((r,i)=>{const nm=T(r[cn]);if(!nm)return;const d=deptOf(r[ci]);if(!d)return res.errs.push('PhuTrach dòng '+(hi+2+i)+': bộ phận phải là SL hoặc KT');res.managers.push({dept:d,name:nm,manager:T(r[cm]).slice(0,60)})})}
+ if(!names.may&&!names.md&&!names.pt)res.errs.push('Không thấy sheet DM_May, PhuTrach hoặc Model_Dao trong file.');
+ return res}
+function catalogGroups(res){
+ const gs=JSON.parse(JSON.stringify(S.cfg.groups||[]));
+ const find=(d,nm)=>{let g=gs.find(x=>(x.dept||'SL')===d&&x.name===nm);if(!g){let n=gs.length+1;while(gs.some(x=>x.id==='g'+n))n++;g={id:'g'+n,dept:d,name:nm,manager:'',machines:[]};gs.push(g)}return g};
+ [['KT','k'],['SL','s']].forEach(([d,f])=>{Object.entries(res.machines).forEach(([m,o])=>{const nm=(o[f]||'').trim();if(!nm)return;
+  gs.forEach(g=>{if((g.dept||'SL')===d)g.machines=(g.machines||[]).filter(x=>x!==m)});const g=find(d,nm);g.machines=[...g.machines,m]})});
+ res.managers.forEach(x=>{find(x.dept,x.name).manager=x.manager});
+ gs.forEach(g=>{g.machines=[...new Set(g.machines||[])].sort(natural)});
+ return gs}
+async function applyCatalog(res){
+ const upd={},cfg=S.cfg;
+ if(Object.keys(res.machines).length){upd.machines={...(cfg.machines||{}),...res.machines};
+  if(res.hasOp1){const inFile=new Set(Object.keys(res.machines));upd.op1=[...new Set([...(cfg.op1||[]).filter(m=>!inFile.has(m)),...res.op1])]}}
+ if(Object.keys(res.machines).length||res.managers.length)upd.groups=catalogGroups(res);
+ if(Object.keys(res.models).length){const ms=JSON.parse(JSON.stringify(cfg.models||[]));
+  Object.entries(res.models).forEach(([name,o])=>{const i=ms.findIndex(m=>m.name===name);if(i>=0){ms[i].tools=o.tools;if(o.title)ms[i].title=o.title}else ms.push({name,tools:o.tools,title:o.title})});upd.models=ms}
+ if(!Object.keys(upd).length)throw new Error('Không có gì để cập nhật');
+ await db.doc('config/main').update(upd)}
+document.addEventListener('change',async e=>{
+ if(e.target.id!=='mcfile')return;const f=e.target.files[0];if(!f)return;const out=$('#mcout');
+ if(!window.XLSX){out.textContent='Chưa tải được thư viện đọc Excel, kiểm tra mạng.';return}
+ try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),res=parseCatalog(wb);window._mc=res;const cfg=S.cfg,L=[];
+  const gOf=(d,m)=>((cfg.groups||[]).find(g=>(g.dept||'SL')===d&&(g.machines||[]).includes(m))||{}).name||'';
+  const ms=Object.keys(res.machines);
+  if(ms.length){const nw=ms.filter(m=>!(cfg.machines||{})[m]),ch=ms.filter(m=>{const o=(cfg.machines||{})[m];return o&&(o.t!==res.machines[m].t||o.k!==res.machines[m].k||o.s!==res.machines[m].s)});
+   const mv=ms.filter(m=>[['KT','k'],['SL','s']].some(([d,k])=>{const n=(res.machines[m][k]||'').trim();return n&&gOf(d,m)&&gOf(d,m)!==n}));
+   L.push('Máy trong file: '+ms.length+' ('+nw.length+' mới, '+ch.length+' đổi thông tin, '+mv.length+' chuyển nhóm)'+(mv.length?': '+mv.slice(0,8).join(', ')+(mv.length>8?'…':''):''));
+   const keep=Object.keys(cfg.machines||{}).filter(m=>!res.machines[m]).length;if(keep)L.push('Giữ nguyên '+keep+' máy không có trong file');
+   if(res.hasOp1)L.push('Máy OP1 trong file: '+res.op1.length)}
+  res.managers.forEach(x=>{const g=(cfg.groups||[]).find(y=>(y.dept||'SL')===x.dept&&y.name===x.name);if(!g)L.push('Nhóm mới: '+x.dept+' '+x.name+(x.manager?' - '+x.manager:''));else if((g.manager||'')!==x.manager)L.push(x.dept+' '+x.name+': '+(g.manager||'(trống)')+' → '+(x.manager||'(trống)'))});
+  const mo=Object.keys(res.models);if(mo.length){const nw=mo.filter(n=>!(cfg.models||[]).some(m=>m.name===n)),ch=mo.filter(n=>{const m=(cfg.models||[]).find(x=>x.name===n);return m&&JSON.stringify(m.tools)!==JSON.stringify(res.models[n].tools)});L.push('Model: '+mo.length+' ('+nw.length+' mới, '+ch.length+' đổi dao)')}
+  out.innerHTML=(L.map(x=>'<div>'+esc(x)+'</div>').join('')||'<div class="mute">Không có thay đổi nào.</div>')+(res.errs.length?`<div class="err">Có ${res.errs.length} lỗi, sửa file rồi chọn lại:<br>${res.errs.slice(0,10).map(esc).join('<br>')}</div>`:(L.length?'<div class="row"><button class="btn primary" data-a="mcapply">Áp dụng cập nhật</button></div>':''))
+ }catch(err){out.textContent='Không đọc được file: '+(err.message||err)}});
 /* ---------- NẠP TỪ FILE EXCEL MẪU ---------- */
 function tplCard(){
  return`<div class="card" style="margin-top:10px"><h3>Nạp dữ liệu từ file Excel mẫu</h3><p class="mute">Chọn file MCT_Database_Mau.xlsx đã điền. Đọc các sheet: DM_VatTu (danh mục vật tư), NhapKho (tồn đầu / nhập kho), Model_Dao (dao theo mã hàng), DM_May (loại máy, nhóm, OP1). Sheet nào không có thì bỏ qua. <b>Xoá dòng dữ liệu mẫu trong file trước khi nạp.</b></p>
@@ -1041,7 +1104,12 @@ async function applyTemplate(res,prog){
  const upd={};
  if(res.has.md&&Object.keys(res.models).length){const ms=JSON.parse(JSON.stringify(S.cfg.models||[]));
   Object.entries(res.models).forEach(([name,o])=>{const i=ms.findIndex(m=>m.name===name);if(i>=0){ms[i].tools=o.tools;if(o.title)ms[i].title=o.title}else ms.push({name,tools:o.tools,title:o.title})});upd.models=ms}
- if(res.has.mm&&Object.keys(res.machines).length){upd.machines=res.machines;upd.op1=res.op1}
+ if(res.has.mm&&Object.keys(res.machines).length){upd.machines=res.machines;upd.op1=res.op1;
+  const gs=JSON.parse(JSON.stringify(S.cfg.groups||[]));
+  [['KT','k'],['SL','s']].forEach(([dept,f])=>{const by={};Object.entries(res.machines).forEach(([m,o])=>{const nm=(o[f]||'').trim();if(nm)(by[nm]=by[nm]||[]).push(m)});
+   Object.entries(by).forEach(([nm,ms])=>{let g=gs.find(x=>(x.dept||'SL')===dept&&x.name===nm);if(!g){let n=gs.length+1;while(gs.some(x=>x.id==='g'+n))n++;g={id:'g'+n,dept,name:nm,manager:'',machines:[]};gs.push(g)}
+    g.machines=[...new Set([...(g.machines||[]),...ms])].sort(natural)})});
+  upd.groups=gs}
  if(Object.keys(upd).length)await db.doc('config/main').update(upd);
  return n}
 document.addEventListener('change',async e=>{
