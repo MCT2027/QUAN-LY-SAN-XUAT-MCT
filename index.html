@@ -699,7 +699,7 @@ function invCalc(){
  S.tx.forEach(t=>{const x=o[t.code]||(o[t.code]={in:0,out:0,use:0,adj:0});if(t.type==='IN')x.in+=t.qty;else if(t.type==='OUT')x.out+=t.qty;else if(t.type==='USE')x.use+=t.qty;else if(t.type==='ADJ')x.adj+=t.qty});
  for(const c in o){o[c].stock=o[c].in-o[c].out+o[c].adj;o[c].field=o[c].out-o[c].use}return o}
 const itemName=c=>S.items[c]?.name||'';
-function txRow(t){return`<tr><td>${new Date(t.at).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td><span class="tag ${t.type==='IN'?'RUN':t.type==='OUT'?'warn':'IDLE'}">${TXN[t.type]||t.type}</span></td><td><b>${esc(t.code)}</b> ${esc(itemName(t.code))}</td><td class="n">${t.type==='OUT'||t.type==='USE'?'−':t.qty>0?'+':''}${t.qty}</td><td>${esc(t.machine?dispName(t.machine):'')}</td><td>${esc(t.by||'')}${t.note?' · '+esc(t.note):''}</td></tr>`}
+function txRow(t){return`<tr><td>${new Date(t.at).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td><td><span class="tag ${t.type==='IN'?'RUN':t.type==='OUT'?'warn':'IDLE'}">${TXN[t.type]||t.type}</span></td><td><b>${esc(t.code)}</b> ${esc(itemName(t.code))}</td><td class="n">${t.type==='OUT'||t.type==='USE'?'−':t.qty>0?'+':''}${t.qty}</td><td>${esc(t.machine?dispName(t.machine):'')}</td><td>${esc(t.by||'')}${t.to?' → <b>'+esc(t.to)+'</b>':''}${t.purpose?' · '+esc(t.purpose):''}${t.note?' · '+esc(t.note):''}</td></tr>`}
 function renderInv(){
  if(!db)return'';subInv();
  if(!(S.loaded.items&&S.loaded.tx&&S.loaded.reqs))return'<p class="mute">Đang tải kho…</p>';
@@ -743,9 +743,9 @@ function invHome(keeper,pend){
  return h+'</div></div>'}
 function invOut(){
  if(!isKeeper())return'<p class="mute">Chỉ thủ kho được xuất kho. Bạn tạo yêu cầu ở ô Yêu cầu.</p>';
- const list=S.reqs.filter(r=>r.status==='PEND');
- if(!list.length)return'<div class="card"><b>Không có yêu cầu chờ xuất.</b><p class="mute">Yêu cầu từ thay dao và yêu cầu tay sẽ hiện ở đây, có số đỏ trên ô XUẤT.</p></div>';
- return list.map(r=>`<div class="card" style="margin-top:8px"><div class="mh"><b style="font-size:18px">${esc(r.machine?dispName(r.machine):'(không máy)')}${r.src==='TC'?' <span class="tag IDLE">Thay dao</span>':''}</b><span class="mute">${new Date(r.at).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span></div><div class="mute">${esc(r.by||'')}${r.note?' · '+esc(r.note):''}</div><div style="margin:6px 0">${r.lines.map(l=>`<div style="font-size:16px"><b>${esc(l.code)}</b> ${esc(itemName(l.code))} <b>× ${l.qty}</b></div>`).join('')}</div><div class="row"><button class="btn" data-a="rejreq" data-id="${esc(r.id)}">Từ chối</button><button class="btn primary big" data-a="givereq" data-id="${esc(r.id)}">📤 XUẤT (quét mã)</button></div></div>`).join('')}
+ const list=S.reqs.filter(r=>r.status==='PEND'),dbtn='<button class="btn primary big" style="width:100%" data-a="directout">📷 Quét mã để xuất kho</button>';
+ if(!list.length)return dbtn+'<div class="card" style="margin-top:8px"><b>Không có yêu cầu chờ xuất.</b><p class="mute">Yêu cầu từ thay dao và yêu cầu tay sẽ hiện ở đây, có số đỏ trên ô XUẤT.</p></div>';
+ return dbtn+list.map(r=>`<div class="card" style="margin-top:8px"><div class="mh"><b style="font-size:18px">${esc(r.machine?dispName(r.machine):'(không máy)')}${r.src==='TC'?' <span class="tag IDLE">Thay dao</span>':''}</b><span class="mute">${new Date(r.at).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span></div><div class="mute">${esc(r.by||'')}${r.note?' · '+esc(r.note):''}</div><div style="margin:6px 0">${r.lines.map(l=>`<div style="font-size:16px"><b>${esc(l.code)}</b> ${esc(itemName(l.code))} <b>× ${l.qty}</b></div>`).join('')}</div><div class="row"><button class="btn" data-a="rejreq" data-id="${esc(r.id)}">Từ chối</button><button class="btn primary big" data-a="givereq" data-id="${esc(r.id)}">📤 XUẤT (quét mã)</button></div></div>`).join('')}
 function stockRows(){
  const c=invCalc(),q=S.kq.trim().toLowerCase();
  const list=Object.keys(S.items).sort(natural).filter(k=>{const it=S.items[k];
@@ -826,6 +826,50 @@ function reqModal(preset){
   if(bad){er.textContent=bad;return}if(!lines.length){er.textContent='Thêm ít nhất một vật tư.';return}
   $('#mok').disabled=true;const id='r'+Date.now().toString(36)+uid();stopCam();
   await db.doc('inv_req/'+id).set({id,at:Date.now(),by:who(),byId:myId||null,machine:m,note:($('#rn').value||'').trim(),lines,status:'PEND'});closeModal();toast('Đã gửi yêu cầu cho máy '+dispName(m)+'.')}}
+const PURPOSES=['Thay dao','Sản xuất','Bảo trì','Setting','Khác'];
+function recentReceivers(n){const o=[];S.tx.forEach(t=>{if(t.type==='OUT'&&t.to&&!o.includes(t.to))o.push(t.to)});return o.slice(0,n)}
+function directOutModal(){
+ const ms=allMachines();let purpose='';
+ openModal(`<h3>Xuất kho trực tiếp</h3><datalist id="dlI">${itemOpts()}</datalist><datalist id="dlM">${ms.map(m=>`<option value="${esc(dispName(m))}">`).join('')}</datalist>
+ <label class="fld" style="margin-top:0">Quét mã hoặc gõ mã vật tư<div class="row" style="margin:4px 0 0"><input id="dsc" list="dlI" autocomplete="off" placeholder="Quét bằng máy quét rồi Enter" style="flex:1;min-width:0"><button type="button" class="btn" id="dcam">📷</button></div></label>${camBox}
+ <div id="dls" style="margin-top:6px"></div>
+ <label class="fld">Người nhận<input id="dto" autocomplete="off" maxlength="40" placeholder="Tên người nhận"></label>
+ <div class="qc">${recentReceivers(5).map(n=>`<button type="button" class="chip" data-to="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+ <div class="mute" style="margin-top:8px">Mục đích</div><div class="qc" id="dpu">${PURPOSES.map(p=>`<button type="button" class="chip" data-pu="${p}">${p}</button>`).join('')}</div>
+ <label class="fld">Máy (nếu có, gõ số máy)<input id="dm" list="dlM" autocomplete="off" inputmode="search" placeholder="Số máy"></label>
+ <label class="fld">Ghi chú<input id="dn" maxlength="80"></label><div class="err" id="er"></div>
+ <div class="row"><button class="btn" id="mc">Huỷ</button><button class="btn primary big" id="mok">XUẤT KHO</button></div>`);
+ const line=(code,qty)=>{const id='dq'+(++stepN);const d=document.createElement('div');d.className='dl card';d.style.cssText='padding:8px;margin-top:6px';d.dataset.code=code;
+  const st=invCalc()[code]?.stock;
+  d.innerHTML=`<div class="row" style="margin:0"><div style="flex:1;min-width:0"><b>${esc(code)}</b> ${esc(S.items[code]?.name||'')}<div class="mute">Tồn ${st} ${esc(S.items[code]?.unit||'')}</div></div><button type="button" class="btn sm dx">✕</button></div>${stepper(id,qty||1,'dq',[1,2,5,10])}`;
+  $('#dls').appendChild(d);return d};
+ const addCode=val=>{const k=resolveItem(val);if(!k){$('#sm').textContent='Mã "'+String(val).slice(0,30)+'" không có trong danh mục.';return false}
+  const ex=[...document.querySelectorAll('.dl')].find(d=>d.dataset.code===k);
+  if(ex){const q=ex.querySelector('.dq');q.value=(+q.value||0)+1}else line(k,1);
+  $('#sm').textContent='Đã thêm '+k+' ('+(S.items[k].name||'')+'). Quét tiếp hoặc chọn người nhận.';return true};
+ const sc=$('#dsc');sc.focus();
+ sc.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(sc.value.trim()&&addCode(sc.value.trim()))sc.value=''}});
+ sc.addEventListener('change',()=>{const v=sc.value.trim();if(v&&resolveItem(v)&&addCode(v))sc.value=''});
+ $('#dcam').onclick=()=>startCam(val=>{addCode(val)},$('#sm'));
+ mbox.onclick=e=>{const t=e.target.closest('[data-to]'),p=e.target.closest('[data-pu]'),x=e.target.closest('.dx');
+  if(t)$('#dto').value=t.dataset.to;
+  else if(p){purpose=p.dataset.pu;document.querySelectorAll('#dpu .chip').forEach(c=>c.classList.toggle('on',c===p))}
+  else if(x)x.closest('.dl').remove()};
+ $('#mc').onclick=closeModal;
+ $('#mok').onclick=async()=>{
+  if(!needWho())return;if(!isKeeper()){toast('Chỉ thủ kho được xuất kho.');return}const er=$('#er');er.textContent='';
+  const lines=[...document.querySelectorAll('.dl')].map(d=>({code:d.dataset.code,qty:Math.round(+d.querySelector('.dq').value)}));
+  if(!lines.length){er.textContent='Quét hoặc nhập ít nhất một vật tư.';return}
+  if(lines.some(l=>!(l.qty>0))){er.textContent='Số lượng mỗi dòng phải là số nguyên > 0.';return}
+  const to=($('#dto').value||'').trim();if(!to){er.textContent='Nhập người nhận.';return}
+  if(!purpose){er.textContent='Chọn mục đích.';return}
+  const mv=($('#dm').value||'').trim(),m=mv?resolveMachine(mv):'';if(mv&&!m){er.textContent='Máy không có trong danh sách.';return}
+  if(!m&&(purpose==='Thay dao'||purpose==='Sản xuất')){er.textContent='Mục đích này cần chọn máy.';return}
+  const c=invCalc();for(const l of lines){const st=c[l.code]?.stock||0;if(l.qty>st){er.textContent='Không đủ tồn: '+l.code+' còn '+st+', xuất '+l.qty+'.';return}}
+  $('#mok').disabled=true;stopCam();const base='d'+Date.now().toString(36)+uid(),note=($('#dn').value||'').trim();
+  try{for(const l of lines)await addTx({type:'OUT',code:l.code,qty:l.qty,machine:m||'',to,purpose,note},'out_'+base+'_'+l.code);
+   closeModal();toast('Đã xuất '+lines.length+' mục cho '+to+' ('+purpose+').')}
+  catch(err){$('#mok').disabled=false;er.textContent='Lỗi ghi: '+(err.code||err.message||err)+'. Kiểm tra lại lịch sử trước khi xuất lại.'}}}
 function invIn(){
  const last=S.tx.filter(t=>t.type==='IN').slice(0,5),pre=S.pre||'',pk=resolveItem(pre);S.pre='';
  return`<datalist id="dlI">${itemOpts()}</datalist><div class="card"><label class="fld" style="margin-top:0">Mã vật tư (gõ, quét máy quét hoặc camera)<div class="row" style="margin:4px 0 0"><input id="ic" list="dlI" autocomplete="off" placeholder="Mã hoặc barcode" value="${esc(pre)}" style="flex:1;min-width:0"><button class="btn" data-a="iscan">📷</button></div></label><div id="iname" class="mute" style="min-height:18px">${pk?esc(S.items[pk].name):''}</div>${camBox}
@@ -897,8 +941,8 @@ function invHist(){
  return`<div class="chips" style="padding:0 0 6px!important">${['ALL','IN','OUT','USE','ADJ'].map(k=>`<button class="chip ${S.kh===k?'on':''}" data-a="kh" data-k="${k}">${k==='ALL'?'Tất cả':TXN[k]}</button>`).join('')}</div>
  <input id="khsearch" placeholder="Lọc theo mã, máy, người…" value="${esc(S.kq)}" style="width:100%;margin-bottom:6px"><div class="card scroll" style="padding:4px 8px"><table><tbody id="khlist">${histRows()}</tbody></table></div>
  <div class="row"><button class="btn" data-a="kcsv">Copy CSV lịch sử</button></div><div id="kcsvout"></div><p class="mute">Hiện tối đa 150 dòng mới nhất, CSV có toàn bộ. Giao dịch đã ghi không xoá được; sai thì điều chỉnh bằng phiếu riêng.</p>`}
-function kCsv(){const L=['Thời gian,Loại,Mã,Tên,Số lượng,Máy,Người,Đơn giá,Ghi chú'];
- [...S.tx].reverse().forEach(t=>L.push([new Date(t.at).toLocaleString('vi-VN'),TXN[t.type]||t.type,t.code,itemName(t.code),t.qty,t.machine||'',t.by||'',t.price||0,t.note||''].map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')));return L.join('\n')}
+function kCsv(){const L=['Thời gian,Loại,Mã,Tên,Số lượng,Máy,Người,Đơn giá,Ghi chú,Người nhận,Mục đích'];
+ [...S.tx].reverse().forEach(t=>L.push([new Date(t.at).toLocaleString('vi-VN'),TXN[t.type]||t.type,t.code,itemName(t.code),t.qty,t.machine||'',t.by||'',t.price||0,t.note||'',t.to||'',t.purpose||''].map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')));return L.join('\n')}
 function parseRows(txt){return txt.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>l.split(l.includes('\t')?'\t':'|').map(x=>x.trim()))}
 function invCat(){
  const rows=Object.keys(S.items).sort(natural).map(k=>`${k} | ${S.items[k].name} | ${S.items[k].grp||''} | ${S.items[k].spec||''} | ${S.items[k].unit||''} | ${S.items[k].barcode||''} | ${S.items[k].min||0} | ${S.items[k].price||0}`).join('\n');
@@ -931,6 +975,7 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-a]')
   if(!needWho())return;
   if(a==='qreq'){reqModal(t.dataset.c);return}
   if(a==='qin'){if(!isKeeper()){toast('Chỉ thủ kho được nhập kho.');return}S.pre=t.dataset.c;S.kho='in';window.scrollTo(0,0);rr();return}
+  if(a==='directout'){if(!isKeeper()){toast('Chỉ thủ kho được xuất kho.');return}if(!needWho())return;if(!Object.keys(S.items).length){toast('Danh mục vật tư đang trống.');return}directOutModal();return}
   if(a==='newreq'){if(!Object.keys(S.items).length){toast('Danh mục vật tư đang trống.');return}reqModal();return}
   if(a==='givereq'){if(!isKeeper()){toast('Chỉ thủ kho được xác nhận xuất.');return}giveModal(t.dataset.id);return}
   if(a==='rejreq'){if(!isKeeper()){toast('Chỉ thủ kho được từ chối.');return}rejModal(t.dataset.id);return}
@@ -946,7 +991,7 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-a]')
     t.disabled=true;let n=0;for(const p of rows){await doIn(p[0],+p[1],p[2]||'');n++}$('#ib').value='';toast('Đã nhập '+n+' dòng.')}catch(x){er.textContent=x.message}t.disabled=false;return}
  }catch(err){toast('Lỗi: '+(err.message||err.code||err))}});
 
-const KHO_A=['tplapply','hc','hscan','qreq','qin','iscan','kho','kg','kh','kp','item','newreq','givereq','rejreq','kcsv','doin','doinbulk','savecat'];
+const KHO_A=['directout','tplapply','hc','hscan','qreq','qin','iscan','kho','kg','kh','kp','item','newreq','givereq','rejreq','kcsv','doin','doinbulk','savecat'];
 /* ---------- NẠP TỪ FILE EXCEL MẪU ---------- */
 function tplCard(){
  return`<div class="card" style="margin-top:10px"><h3>Nạp dữ liệu từ file Excel mẫu</h3><p class="mute">Chọn file MCT_Database_Mau.xlsx đã điền. Đọc các sheet: DM_VatTu (danh mục vật tư), NhapKho (tồn đầu / nhập kho), Model_Dao (dao theo mã hàng), DM_May (loại máy, nhóm, OP1). Sheet nào không có thì bỏ qua. <b>Xoá dòng dữ liệu mẫu trong file trước khi nạp.</b></p>
