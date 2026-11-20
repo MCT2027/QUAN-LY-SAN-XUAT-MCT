@@ -997,33 +997,44 @@ function tplCard(){
  return`<div class="card" style="margin-top:10px"><h3>Nạp dữ liệu từ file Excel mẫu</h3><p class="mute">Chọn file MCT_Database_Mau.xlsx đã điền. Đọc các sheet: DM_VatTu (danh mục vật tư), NhapKho (tồn đầu / nhập kho), Model_Dao (dao theo mã hàng), DM_May (loại máy, nhóm, OP1). Sheet nào không có thì bỏ qua. <b>Xoá dòng dữ liệu mẫu trong file trước khi nạp.</b></p>
  <input type="file" id="tplfile" accept=".xlsx,.xls" style="width:100%"><div id="tplout" style="margin-top:8px"></div></div>`}
 const djb=str=>{let h=5381;for(let i=0;i<str.length;i++)h=((h<<5)+h+str.charCodeAt(i))>>>0;return h.toString(36)};
+const GROUP_ALIAS={'tool':'Tool gia công','tool gia công':'Tool gia công','dao cụ':'Dao cụ','holder / collet':'Holder / Collet','holder':'Holder / Collet','collet':'Holder / Collet','vật tư phụ tùng':'Vật tư phụ tùng','phụ tùng':'Vật tư phụ tùng','linh kiện dự phòng':'Vật tư phụ tùng','dầu tưới nguội':'Dầu tưới nguội','vật tư tiêu hao':'Vật tư tiêu hao','supplies expense':'Vật tư tiêu hao','vpp':'VPP','văn phòng phẩm':'VPP'};
+const normCode=c=>String(c==null?'':c).trim().replace(/\s+/g,'_');
 function parseTemplate(wb){
- const sh=n=>wb.Sheets[n]?XLSX.utils.sheet_to_json(wb.Sheets[n],{defval:''}):null,res={errs:[],items:[],ins:[],models:{},machines:{},op1:[],has:{}},E=m=>res.errs.push(m),T=v=>String(v==null?'':v).trim();
- const vt=sh('DM_VatTu');
- if(vt){res.has.vt=1;vt.forEach((r,i)=>{const c=T(r['Mã vật tư']);if(!c)return;const g=T(r['Nhóm']),mn=+(r['Tồn tối thiểu']||0),pr=+(r['Đơn giá (VND)']||0),at='DM_VatTu dòng '+(i+2)+': ';
-  if(!/^[A-Za-z0-9_\-.]+$/.test(c))return E(at+'mã chỉ gồm chữ, số, - _ . ('+c+')');
-  if(g&&!INV_GROUPS.includes(g))return E(at+'nhóm không hợp lệ ('+g+')');
+ const T=v=>String(v==null?'':v).trim();
+ // đọc bảng: tự tìm dòng tiêu đề (dòng đầu tiên có cột bắt buộc), cột trùng tên được đánh số _1, _2
+ const sh=(n,must)=>{const ws=wb.Sheets[n];if(!ws)return null;const A=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  let hi=A.findIndex(r=>r.some(x=>T(x)===must));if(hi<0)return[];
+  const seen={},H=A[hi].map(x=>{let h=T(x);if(!h)return'';if(seen[h]!=null){seen[h]++;h=h+'_'+seen[h]}else seen[h]=0;return h});
+  return A.slice(hi+1).map((r,i)=>{const o={__row:hi+2+i};H.forEach((h,j)=>{if(h)o[h]=r[j]===undefined?'':r[j]});return o})};
+ const res={errs:[],items:[],ins:[],opens:[],fixed:0,models:{},machines:{},op1:[],has:{}},E=m=>res.errs.push(m);
+ const vt=sh('DM_VatTu','Mã vật tư');
+ if(vt){res.has.vt=1;vt.forEach(r=>{const raw=T(r['Mã vật tư']);if(!raw)return;const c=normCode(raw);if(c!==raw)res.fixed++;
+  const g0=T(r['Nhóm']),g=g0?(INV_GROUPS.includes(g0)?g0:GROUP_ALIAS[g0.toLowerCase()]||''):'',mn=+(r['Tồn tối thiểu']||0),pr=+(r['Đơn giá (VND)']||0),op=r['Tồn kho']===''?0:+r['Tồn kho'],at='DM_VatTu dòng '+r.__row+': ';
+  if(!/^[A-Za-z0-9_\-.]+$/.test(c))return E(at+'mã chỉ gồm chữ, số, - _ . khoảng trắng ('+raw+')');
+  if(g0&&!g)return E(at+'nhóm không nhận ra ('+g0+'). Dùng: '+INV_GROUPS.join(', ')+' hoặc Tool / Linh kiện dự phòng / Supplies expense');
   if(!(mn>=0)||!(pr>=0))return E(at+'tồn tối thiểu / đơn giá phải là số ≥ 0');
-  res.items.push({code:c,name:T(r['Tên']).slice(0,80),grp:g,spec:T(r['Quy cách']).slice(0,60),unit:T(r['ĐVT']).slice(0,12),barcode:T(r['Barcode']).slice(0,40),min:mn,price:pr})})}
+  if(!(op>=0)||!Number.isInteger(op))return E(at+'tồn đầu kỳ phải là số nguyên ≥ 0 ('+r['Tồn kho']+')');
+  res.items.push({code:c,name:T(r['Tên']).slice(0,80),grp:g,spec:T(r['Quy cách']).slice(0,60),unit:T(r['ĐVT']).slice(0,12),barcode:T(r['Barcode']).slice(0,40),min:mn,price:pr});if(op>0)res.opens.push({code:c,qty:op})})}
  const codes=new Set([...Object.keys(S.items),...res.items.map(x=>x.code)]),seen=new Set();
  res.items.forEach(x=>{if(seen.has(x.code))E('DM_VatTu: mã trùng '+x.code);seen.add(x.code)});
- const nk=sh('NhapKho');
- if(nk){res.has.nk=1;nk.forEach((r,i)=>{const c=T(r['Mã vật tư']);if(!c)return;const q=+r['Số lượng'],at='NhapKho dòng '+(i+2)+': ';
-  if(!codes.has(c))return E(at+'mã '+c+' chưa có trong danh mục');if(!(Number.isInteger(q)&&q>0))return E(at+'số lượng phải là số nguyên > 0');
-  res.ins.push({code:c,qty:q,po:T(r['Số phiếu / NCC']),row:i+2})})}
- const md=sh('Model_Dao');
- if(md){res.has.md=1;md.forEach((r,i)=>{const m=T(r['Mã hàng (model)']);if(!m)return;const dc=T(r['Mã dao']);if(!dc)return;const life=+r['Tuổi thọ chuẩn (pcs)'],at='Model_Dao dòng '+(i+2)+': ';
+ const nk=sh('NhapKho','Mã vật tư');
+ if(nk){res.has.nk=1;nk.forEach(r=>{const raw=T(r['Mã vật tư']);if(!raw)return;const c=normCode(raw),qv=r['Số lượng'],q=+qv,at='NhapKho dòng '+r.__row+': ';
+  if(!codes.has(c))return E(at+'mã '+raw+' chưa có trong danh mục');if(qv===''||!(Number.isInteger(q)&&q>0))return E(at+'số lượng phải là số nguyên > 0');
+  res.ins.push({code:c,qty:q,po:T(r['Số phiếu / NCC']||r['Waybill number']),row:r.__row})})}
+ const md=sh('Model_Dao','Mã hàng (model)');
+ if(md){res.has.md=1;md.forEach(r=>{const m=T(r['Mã hàng (model)']);if(!m)return;const dc=T(r['Mã dao']);if(!dc)return;const life=+r['Tuổi thọ chuẩn (pcs)'],at='Model_Dao dòng '+r.__row+': ';
   if(!(life>0))return E(at+'tuổi thọ chuẩn phải là số > 0');
   const o=res.models[m]||(res.models[m]={title:'',tools:[]});if(!o.title)o.title=T(r['Tên hàng']).slice(0,80);
   if(o.tools.some(x=>x.code===dc))return E(at+'dao '+dc+' bị trùng trong model '+m);o.tools.push({code:dc,name:T(r['Tên dao']),life})})}
- const mm=sh('DM_May');
- if(mm){res.has.mm=1;mm.forEach((r,i)=>{const m=T(r['Mã máy']);if(!m)return;if(!/^[A-Za-z0-9_\-]+$/.test(m))return E('DM_May dòng '+(i+2)+': mã máy chỉ gồm chữ, số, - _ ('+m+')');
+ const mm=sh('DM_May','Mã máy');
+ if(mm){res.has.mm=1;mm.forEach(r=>{const m=T(r['Mã máy']);if(!m)return;if(!/^[A-Za-z0-9_\-]+$/.test(m))return E('DM_May dòng '+r.__row+': mã máy chỉ gồm chữ, số, - _ ('+m+')');
   res.machines[m]={t:T(r['Loại máy']),k:T(r['Nhóm kỹ thuật']),s:T(r['Nhóm sản lượng'])};if(/^(x|1|true)$/i.test(T(r['OP1 (x)'])))res.op1.push(m)})}
  return res}
 async function applyTemplate(res){
  let n=0;
  for(const it of res.items){const old=S.items[it.code];if(old&&['name','grp','spec','unit','barcode','min','price'].every(k=>old[k]==it[k]))continue;await db.doc('inv_items/'+it.code).set(it);n++}
  const price=Object.fromEntries(res.items.map(x=>[x.code,x.price]));
+ for(const x of (res.opens||[]))await addTx({type:'IN',code:x.code,qty:x.qty,note:'Tồn đầu kỳ',price:+(res.items.find(i=>i.code===x.code)||{}).price||0},'open_'+x.code);
  for(const x of res.ins)await addTx({type:'IN',code:x.code,qty:x.qty,note:x.po||'Nhập từ Excel',price:price[x.code]!=null?price[x.code]:(+S.items[x.code]?.price||0)},'imp_'+djb(x.row+'|'+x.code+'|'+x.qty+'|'+x.po));
  const upd={};
  if(res.has.md&&Object.keys(res.models).length){const ms=JSON.parse(JSON.stringify(S.cfg.models||[]));
@@ -1035,7 +1046,7 @@ document.addEventListener('change',async e=>{
  if(e.target.id!=='tplfile')return;const f=e.target.files[0];if(!f)return;const out=$('#tplout');
  if(!window.XLSX){out.textContent='Chưa tải được thư viện đọc Excel, kiểm tra mạng. Có thể dán dữ liệu thủ công.';return}
  try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),res=parseTemplate(wb);window._tpl=res;
-  const L=[];if(res.has.vt)L.push('DM_VatTu: '+res.items.length+' mã ('+res.items.filter(x=>!S.items[x.code]).length+' mới)');if(res.has.nk)L.push('NhapKho: '+res.ins.length+' dòng, tổng '+res.ins.reduce((a,x)=>a+x.qty,0)+' cái');
+  const L=[];if(res.has.vt)L.push('DM_VatTu: '+res.items.length+' mã ('+res.items.filter(x=>!S.items[x.code]).length+' mới)');if(res.opens.length)L.push('Tồn đầu kỳ: '+res.opens.length+' mã, tổng '+res.opens.reduce((a,x)=>a+x.qty,0));if(res.fixed)L.push('Có '+res.fixed+' mã chứa khoảng trắng, được đổi thành dấu _');if(res.has.nk)L.push('NhapKho: '+res.ins.length+' dòng, tổng '+res.ins.reduce((a,x)=>a+x.qty,0)+' cái');
   if(res.has.md)L.push('Model_Dao: '+Object.keys(res.models).length+' model');if(res.has.mm)L.push('DM_May: '+Object.keys(res.machines).length+' máy, '+res.op1.length+' máy OP1');
   out.innerHTML=(L.map(x=>'<div>'+esc(x)+'</div>').join('')||'<div class="mute">Không thấy sheet nào đọc được.</div>')+(res.errs.length?`<div class="err">Có ${res.errs.length} lỗi, sửa file rồi chọn lại:<br>${res.errs.slice(0,10).map(esc).join('<br>')}</div>`:(L.length?'<div class="row"><button class="btn primary" data-a="tplapply">Nạp vào hệ thống</button></div>':''))
  }catch(err){out.textContent='Không đọc được file: '+(err.message||err)}});
