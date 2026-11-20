@@ -376,9 +376,10 @@ function curSlot(){
  return Math.min(3,Math.max(0,Math.floor((now-ws)/10800e3)))}
 const slotLabel=i=>{const h=slotHours(S.ctx.shift)[i];return pad(h)+'–'+pad((h+3)%24)};
 function renderWork(){
- const ms=viewMachines(),KT=S.dept==='KT';
+ const KT=S.dept==='KT',ms=KT?viewMachines():ordSort(viewMachines());
  if(!ms.length)return'<p class="mute">Chưa có máy trong nhóm này. Vào Cài đặt để khai báo nhóm/máy.</p>';
  let h='';const cs=KT?0:curSlot();
+ if(!KT)h+='<div class="row tight" style="margin-bottom:8px"><button class="btn sm" data-a="quick">⚡ Xem nhanh</button></div>';
  if(KT){
   if(S.selMode)h+=`<div class="row tight"><button class="btn" data-a="selall">Chọn tất cả</button><button class="btn" data-a="selnone">Bỏ chọn</button><button class="btn" data-a="selexit">Thoát</button></div>`;
   else{const nr=ms.filter(m=>stOf(m)==='RUN').length,nz=ms.filter(m=>stOf(m)!=='RUN').length;
@@ -391,7 +392,7 @@ function renderWork(){
   else{const e=slotEntry(m,cs);info=esc(st.model||'')+'<br>'+(e?`✓ OK ${e.ok} · NG ${e.ng}`:'<b>Chưa nhập</b>')}
   if(!KT&&isOP1(m))return`<button class="tile IDLE" disabled style="opacity:.4;cursor:not-allowed"><span class="tn">${esc(dispName(m))}</span><span class="ti">OP1<br>không nhập</span></button>`;
   const on=KT&&S.selMode&&S.selected.has(m);
-  return`<button class="tile ${cls} ${on?'sel':''}" data-a="${KT?(S.selMode?'seltoggle':'tile'):'ptile'}" data-m="${esc(m)}">${KT&&S.selMode?`<span class="ck">${on?'✓':''}</span>`:''}<span class="tn">${esc(dispName(m))}</span><span class="ti">${info}</span></button>`}).join('')+'</div>';
+  return`<button id="pc-${esc(m)}" class="tile ${cls} ${on?'sel':''}" data-a="${KT?(S.selMode?'seltoggle':'tile'):'ptile'}" data-m="${esc(m)}">${KT&&S.selMode?`<span class="ck">${on?'✓':''}</span>`:''}<span class="tn">${esc(dispName(m))}</span><span class="ti">${info}</span></button>`}).join('')+'</div>';
  
  if(KT&&S.selMode){const n=S.selected.size;h+=`<div class="selbar"><button class="btn danger big" data-a="selstop" ${n?'':'disabled'}>DỪNG (${n})</button><button class="btn run big" data-a="selrun" ${n?'':'disabled'}>RUN (${n})</button></div>`}
  return h}
