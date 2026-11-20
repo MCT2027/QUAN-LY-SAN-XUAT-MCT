@@ -514,6 +514,15 @@ function runAllModal(arg){
  const ms=arg||viewMachines(),isBrk=m=>stOf(m)==='STOP'&&S.state[m]?.reason==='ST02',broken=ms.filter(isBrk),stopped=ms.filter(m=>stOf(m)==='STOP'&&!isBrk(m)),idle=ms.filter(m=>stOf(m)==='IDLE');
  if(!stopped.length&&!idle.length){toast(broken.length?broken.length+' máy đang hỏng, không chạy bằng lệnh chọn tất cả. Mở từng máy, tích xác nhận đã sửa xong rồi RUN.':'Không có máy nào cần chạy trong nhóm này.');return}
  const cur=shiftOfNow(),[ws]=win(cur.date,cur.shift),now=new Date();
+ if(idle.every(m=>assignedFor(m)[0])){
+  if(S.runBusy)return;S.runBusy=true;let n=0;const t0=Date.now();
+  (async()=>{try{
+   for(const m of stopped){if(stOf(m)!=='STOP')continue;await doRun(m,t0,false,'');n++}
+   for(const m of idle){if(stOf(m)!=='IDLE')continue;await doStart(m,assignedFor(m)[0].part,ws);n++}
+   toast('Đã chạy '+n+' máy theo model đã gán.'+(broken.length?' '+broken.length+' máy hỏng không chạy: '+broken.map(dispName).join(', '):''));
+   if(arg){S.selMode=false;S.selected.clear()}rr()}
+  catch(e){toast('Lỗi: '+(e.message||e.code||e)+' (đã ghi '+n+' máy)');rr()}
+  finally{S.runBusy=false}})();return}
  const opts=S.cfg.models.map(x=>`<option>${esc(x.name)}</option>`).join('');
  const pmOpt=m=>{const seen=new Set(),as=assignedFor(m).map(x=>x.part),def=as[0]||'';let h='<option value="">— bỏ qua —</option>';[...as,...S.cfg.models.filter(x=>x.tools.length).map(x=>x.name)].forEach(p=>{if(seen.has(p))return;seen.add(p);h+=`<option value="${esc(p)}" ${p===def?'selected':''}>${esc(p)}</option>`});return h};
  openModal(`<h3>RUN tất cả</h3>
