@@ -220,8 +220,10 @@ const slotHours=shift=>shift==='D'?[8,11,14,17]:[20,23,2,5];
 const ovl=(s,e,ws,we)=>Math.max(0,Math.min(e,we)-Math.max(s,ws))/60000;
 const getModel=n=>S.cfg.models.find(m=>m.name===n);
 const dg=()=>S.cfg.groups.filter(g=>(g.dept||'SL')===S.dept);
+const dgv=()=>{const a=dg().filter(g=>gMachines(g).length);return a.length?a:dg()};
 const DN={SL:'SL',KT:'KT'};
-function viewMachines(){if(S.group==='ALL')return[...new Set(dg().flatMap(g=>g.machines))];const g=dg().find(g=>g.id===S.group);return g?g.machines:[]}
+function gMachines(g){const f=GF[g.dept||'SL']?.[S.ctx?.shift==='N'?1:0];if(!f)return g.machines;const M=S.cfg.machines||{};return g.machines.filter(m=>{const v=M[m]?.[f];return v===undefined||v===g.name})}
+function viewMachines(){if(S.group==='ALL')return[...new Set(dg().flatMap(g=>gMachines(g)))];const g=dg().find(g=>g.id===S.group);return g?gMachines(g):[]}
 const store=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
 const load=k=>{try{return localStorage.getItem(k)||''}catch(e){return''}};
 const who=()=>($('#who').value||'').trim();
@@ -418,7 +420,7 @@ async function saveSlot(m,i,ok,ng){
  if(old&&old.ok===ok&&old.ng===ng)return;
  if(old)d.hist.push({slot:i,ok:old.ok,ng:old.ng,by:old.by,at:old.at,replacedBy:who(),replacedAt:now});
  d.slots[i]={ok,ng,by:who(),at:now,model:S.state[m]?.model||''};
- await ref.set(d);
+ await ref.set(d);ordNote(m);
  const k=S.prod.findIndex(p=>p.machine===m&&p.shift===S.ctx.shift);if(k>=0)S.prod[k]=d;else S.prod.push(d)}
 
 let myId=null;
@@ -478,6 +480,9 @@ document.addEventListener('input',async e=>{const el=e.target;if(!el.classList||
 const isOP1=m=>(S.cfg.op1||[]).some(x=>String(x).toUpperCase()===String(m).toUpperCase());
 const shortPart=p=>String(p||'').replace(/-MC00$/,'').trim();
 const dispName=m=>String(m).replace(/^LMSV-/,'');
+const carryMeta=(res,old)=>Object.keys(res.machines).forEach(m=>{const o=old?.[m],n=res.machines[m];if(!o)return;if(!res.hasProd&&o.p?.length)n.p=o.p});
+const GCOL=[['kd','Nhóm kỹ thuật ca ngày'],['kn','Nhóm kỹ thuật ca đêm'],['sd','Nhóm sản lượng ca ngày'],['sn','Nhóm sản lượng ca đêm']];
+const GF={KT:['kd','kn'],SL:['sd','sn']};
 const prodList=v=>String(v==null?'':v).split(/[;\n]/).map(x=>x.trim()).filter(Boolean).slice(0,6).map(x=>x.slice(0,80));
 function assignedFor(m){const pl=S.cfg.machines?.[m]?.p;if(pl&&pl.length)return pl.map(x=>({part:x,name:''}));const sh=shiftOfNow().shift,A=S.cfg.assign||{};return A[sh]?.map?.[m]||A[sh==='D'?'N':'D']?.map?.[m]||[]}
 function modelPicker(m,sel){
@@ -562,12 +567,17 @@ function pendingSlots(ms){
   for(let i=0;i<4;i++)if(ws+(i+1)*10800e3<=now&&!(p&&p.slots&&p.slots[i]))n++}
  return n}
 
+const ORD_KEY='mct_ord_v1';
+function ordLoad(){try{return JSON.parse(localStorage.getItem(ORD_KEY))||{}}catch(e){return{}}}
+function ordNote(m){try{const k=S.ctx.date+'_'+S.ctx.shift,o=ordLoad();if(o.key!==k){if((o.cur||[]).length)o.prev=o.cur;o.cur=[];o.key=k}o.cur=o.cur||[];if(!o.cur.includes(m))o.cur.push(m);localStorage.setItem(ORD_KEY,JSON.stringify(o))}catch(e){}}
+function ordSort(ms){const o=ordLoad(),ref=(o.key===S.ctx.date+'_'+S.ctx.shift?o.prev:o.cur)||[];if(!ref.length)return ms;
+ const ix=m=>{const i=ref.indexOf(m);return i<0?1e9:i};return ms.map((m,n)=>[m,n]).sort((a,b)=>ix(a[0])-ix(b[0])||a[1]-b[1]).map(x=>x[0])}
 function renderProd(){
- const ms=viewMachines(),[ws]=win(S.ctx.date,S.ctx.shift),hrs=slotHours(S.ctx.shift),now=Date.now();
+ const ms=ordSort(viewMachines()),[ws]=win(S.ctx.date,S.ctx.shift),hrs=slotHours(S.ctx.shift),now=Date.now();
  if(!ms.length)return'<p class="mute">Chưa có máy.</p>';
- return'<p class="mute">Nhập số thực tế mỗi 2 giờ, máy dừng thì nhập 0 (ô trống = chưa nhập). Sửa số đã nhập sẽ lưu lịch sử.</p><div class="grid">'+ms.map(m=>{
+ return'<div class="row" style="margin-bottom:6px"><button class="btn sm" data-a="quick">⚡ Xem nhanh</button></div><p class="mute">Nhập số thực tế mỗi 2 giờ, máy dừng thì nhập 0 (ô trống = chưa nhập). Sửa số đã nhập sẽ lưu lịch sử.</p><div class="grid">'+ms.map(m=>{
   const p=S.prod.find(p=>p.machine===m&&p.shift===S.ctx.shift),sl=p?.slots||{};
-  return`<div class="card"><div class="mh"><span class="mname">${esc(m)}</span><span class="mute">${esc(S.state[m]?.model||'')}</span></div>
+  return`<div class="card" id="pc-${esc(m)}"><div class="mh"><span class="mname">${esc(m)}</span><span class="mute">${esc(S.state[m]?.model||'')}</span></div>
   <table><tr><th>Khoảng</th><th class="n">OK</th><th class="n">NG</th></tr>`+hrs.map((h,i)=>{
    const late=ws+(i+1)*10800e3<=now&&!sl[i];
    return`<tr class="slot"><td>${pad(h)}:00–${pad((h+3)%24)}:00${late?' <span class="tag warn">chưa nhập</span>':''}</td>
@@ -575,6 +585,17 @@ function renderProd(){
    <td class="n"><input type="number" min="0" inputmode="numeric" data-m="${esc(m)}" data-i="${i}" data-f="ng" value="${sl[i]?.ng??''}"></td></tr>`}).join('')+
   `</table><div class="row"><button class="btn primary" data-a="saveprod" data-m="${esc(m)}">Lưu sản lượng ${esc(m)}</button></div></div>`}).join('')+'</div>'}
 
+function quickProd(){
+ const ms=viewMachines(),rows=[];
+ ms.forEach(m=>{const p=S.prod.find(p=>p.machine===m&&p.shift===S.ctx.shift),sl=Object.values(p?.slots||{}).filter(x=>x&&x.at);if(!sl.length)return;
+  const last=sl.reduce((a,x)=>x.at>a.at?x:a),c=calcMachine(m);rows.push({m,at:last.at,model:last.model||S.state[m]?.model||'',ok:c.ok,ng:c.ng,by:last.by||'',stops:REASONS.filter(r=>c.by[r.code]>0.5).map(r=>r.name+' '+fmtDur(c.by[r.code]))})});
+ rows.sort((a,b)=>b.at-a.at);
+ const body=rows.slice(0,80).map(r=>`<tr data-qm="${esc(r.m)}" style="cursor:pointer"><td><b>${esc(dispName(r.m))}</b><div class="mute" style="font-size:11px">${fmtTime(r.at)} · ${esc(r.by)}</div></td><td>${esc(r.model||'—')}</td><td class="n">${r.ok}</td><td class="n">${r.ng}</td><td>${r.stops.length?esc(r.stops.join(', ')):'<span class="mute">—</span>'}</td></tr>`).join('');
+ openModal(`<h3>Vừa nhập · ${rows.length} máy</h3><div class="mute">Mới nhập ở trên. OK/NG là tổng cả ca; dừng máy lấy từ mục Dừng máy. Bấm một dòng để nhảy tới máy đó.</div>
+ <div class="scroll" style="max-height:60vh;margin-top:8px"><table><tr><th>Máy</th><th>Model</th><th class="n">OK</th><th class="n">NG</th><th>Dừng máy</th></tr>${body||'<tr><td colspan="5" class="mute">Chưa nhập số nào trong ca này.</td></tr>'}</table></div>
+ <div class="row"><button class="btn" id="mc">Đóng</button></div>`);
+ $('#mc').onclick=closeModal;
+ mbox.querySelectorAll('tr[data-qm]').forEach(tr=>tr.onclick=()=>{const m=tr.dataset.qm;closeModal();const e=document.getElementById('pc-'+m);if(e){e.scrollIntoView({block:'center',behavior:'smooth'});e.style.outline='2px solid var(--run,#2e9)';setTimeout(()=>{e.style.outline=''},1800)}})}
 async function saveProd(m){
  if(!needWho())return;
  const id=m+'_'+S.ctx.date+'_'+S.ctx.shift,ref=db.doc('prod/'+id),sn=await ref.get();
@@ -589,9 +610,10 @@ async function saveProd(m){
   if(old)d.hist.push({slot:i,ok:old.ok,ng:old.ng,by:old.by,at:old.at,replacedBy:who(),replacedAt:now});
   d.slots[i]={ok,ng,by:who(),at:now,model:S.state[m]?.model||''};changed++}
  if(!changed){toast('Không có thay đổi.');return}
- await ref.set(d);toast('Đã lưu sản lượng '+m)}
+ await ref.set(d);ordNote(m);toast('Đã lưu sản lượng '+m)}
 
 const mt=m=>S.cfg.machines?.[m]||{};
+const grpOf=(d,m)=>{const o=mt(m),v=o[GF[d][S.ctx?.shift==='N'?1:0]];return v!==undefined?v:(d==='KT'?o.k:o.s)};
 const natural=(a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true});
 const TYPE_ORDER=['MCT4','MCT6','MCT6.5','장축'];
 function statTable(title,keyFn,ms){
@@ -618,7 +640,7 @@ function dashboard(ms,rows,tot,T){
   +kpi('Thời gian dừng',fmtDur(stop),T?'lý do lớn nhất: '+esc(RN[Object.keys(tot).sort((a,b)=>tot[b]-tot[a])[0]]||''):'')
   +kpi('OK',ok,'không tính máy OP1')+kpi('NG',ng,ok+ng?(ng/(ok+ng)*100).toFixed(1)+'% NG':'–')
   +kpi('Dao thay',rows.reduce((n,{m})=>n+S.logs.filter(l=>l.machine===m).reduce((a,l)=>a+l.stops.filter(x=>x.tool&&ovl(x.start,x.end??Date.now(),win(S.ctx.date,S.ctx.shift)[0],win(S.ctx.date,S.ctx.shift)[1])>0).length,0),0),'lần trong ca')+'</div>';
- h+='<div class="card"><b>% chạy <span class="mute" style="font-weight:400">(·số máy)</span></b>'+rateRows('Loại máy',m=>mt(m).t,ms)+rateRows('Nhóm kỹ thuật',m=>mt(m).k,ms)+rateRows('Nhóm sản lượng',m=>mt(m).s,ms)+'</div>';
+ h+='<div class="card"><b>% chạy <span class="mute" style="font-weight:400">(·số máy)</span></b>'+rateRows('Loại máy',m=>mt(m).t,ms)+rateRows('Nhóm kỹ thuật',m=>grpOf('KT',m),ms)+rateRows('Nhóm sản lượng',m=>grpOf('SL',m),ms)+'</div>';
  const sl=slotHours(S.ctx.shift).map((hr,i)=>{let o=0,n=0;ms.forEach(m=>{if(isOP1(m))return;const e=slotEntry(m,i);if(e){o+=+e.ok||0;n+=+e.ng||0}});return{hr,o,n}});
  const mxo=Math.max(1,...sl.map(x=>x.o));
  h+='<div class="card"><b>Sản lượng OK theo Time</b><div class="cols">'+sl.map((x,i)=>`<div title="Time ${i+1}: OK ${x.o}, NG ${x.n}"><span>${x.o}</span><i style="height:${Math.round(x.o/mxo*56)}px"></i><span class="mute">T${i+1} · ${pad(x.hr)}h</span><span class="mute">NG ${x.n}</span></div>`).join('')+'</div></div>';
@@ -633,7 +655,7 @@ function renderReport(){
  const mx=Math.max(1,...Object.values(tot));
  let h=`<h2 style="margin-top:0">Tổng hợp theo máy</h2><div class="card scroll"><table><tr><th>Máy</th><th>Loại</th><th class="n">OK</th><th class="n">NG</th><th class="n">% NG</th><th class="n">Chạy</th><th class="n">Dừng</th>${REASONS.map(r=>`<th class="n">${esc(r.name)}</th>`).join('')}<th class="n">% chạy</th></tr>`;
  h+=rows.map(({m,c})=>`<tr><td><b>${esc(dispName(m))}</b></td><td>${esc(mt(m).t||'')}</td>${isOP1(m)?'<td class="n">OP1</td><td class="n">–</td><td class="n">–</td>':`<td class="n">${c.ok}</td><td class="n">${c.ng}</td><td class="n">${c.ok+c.ng?(c.ng/(c.ok+c.ng)*100).toFixed(1)+'%':'–'}</td>`}<td class="n">${fmtDur(c.run)}</td><td class="n">${fmtDur(c.stop)}</td>${REASONS.map(r=>`<td class="n">${c.by[r.code]?Math.round(c.by[r.code]):'–'}</td>`).join('')}<td class="n">${c.total?c.avail.toFixed(0)+'%':'–'}</td></tr>`).join('')+'</table></div>';
- h=statTable('Tỉ lệ hoạt động theo loại máy',m=>mt(m).t,ms)+statTable('Theo nhóm kỹ thuật',m=>mt(m).k,ms)+statTable('Theo nhóm sản lượng',m=>mt(m).s,ms)+h;
+ h=statTable('Tỉ lệ hoạt động theo loại máy',m=>mt(m).t,ms)+statTable('Theo nhóm kỹ thuật',m=>grpOf('KT',m),ms)+statTable('Theo nhóm sản lượng',m=>grpOf('SL',m),ms)+h;
  h+=`<p class="mute">Thời gian chạy = thời gian ca đã trôi qua − tổng dừng (phút trừ lý do, chưa trừ nghỉ theo lịch). % chạy là tỷ lệ máy chạy, chưa phải OEE.</p>`;
  h+='<h2>Dừng máy theo lý do (phút, các máy đang xem)</h2><div class="card">'+(T?REASONS.filter(r=>tot[r.code]).sort((a,b)=>tot[b.code]-tot[a.code]).map(r=>`<div style="display:flex;align-items:center;gap:8px;margin:6px 0"><span style="width:130px">${esc(r.name)}</span><div style="flex:1"><div class="bar2" style="width:${tot[r.code]/mx*100}%"></div></div><b style="width:90px;text-align:right">${Math.round(tot[r.code])}p (${(tot[r.code]/T*100).toFixed(0)}%)</b></div>`).join(''):'<span class="mute">Chưa có dừng máy trong ca.</span>')+'</div>';
  const stops=[];S.logs.forEach(l=>{if(ms.includes(l.machine))l.stops.forEach(s=>{if(ovl(s.start,s.end??Date.now(),ws,we)>0)stops.push(s={...s,machine:l.machine})})});
@@ -657,12 +679,12 @@ function renderSettings(){
  const g=S.cfg.groups.map(g=>`${g.dept||'SL'} | ${g.name} | ${g.manager} | ${g.machines.join(',')}`).join('\n');
  const cnt={};['D','N'].forEach(k=>{const c={};Object.values(S.cfg.assign?.[k]?.map||{}).forEach(a=>a.forEach(x=>c[x.part]=(c[x.part]||0)+1));for(const p in c)cnt[p]=Math.max(cnt[p]||0,c[p])});
  const m=[...S.cfg.models].sort((a,b)=>(cnt[b.name]||0)-(cnt[a.name]||0)).map(m=>`${m.name} | ${m.tools.map(t=>`${t.code}:${t.name}:${t.life}`).join(', ')} | ${cnt[m.name]||0} máy | ${m.title||''}`).join('\n');
- return`<div class="card"><h3>Nhóm phụ trách</h3><p class="mute">Mỗi dòng: SL hoặc KT | Tên nhóm | Người phụ trách | danh sách máy cách nhau dấu phẩy. SL = nhóm sản lượng (khu vực nhập sản lượng), KT = nhóm kỹ thuật. Một máy có thể nằm ở cả hai bộ phận.</p>
+ return`<div class="card"><h3>Nhóm phụ trách</h3><p class="mute">Mỗi dòng: SL hoặc KT | Tên nhóm | Người phụ trách | danh sách máy cách nhau dấu phẩy. SL = nhóm sản lượng (khu vực nhập sản lượng), KT = nhóm kỹ thuật. Một máy có thể nằm ở cả hai bộ phận. Máy của mỗi nhóm theo ca ngày/ca đêm được quyết định bởi bảng <b>Danh mục máy</b> bên dưới.</p>
  <textarea id="cg">${esc(g)}</textarea>
  <h3 style="margin-top:14px">Model và dao</h3><p class="mute">Mỗi dòng: Mã hàng | Mã:Tên dao:Tuổi thọ chuẩn, … | số máy (chỉ để xem, tự tính theo MES) | Tên hàng. Ví dụ dao: T01:Dao phá:1500</p>
  <textarea id="cm">${esc(m)}</textarea>
- <h3 style="margin-top:14px">Danh mục máy (loại, nhóm kỹ thuật, nhóm sản lượng)</h3><p class="mute">Mỗi dòng: Mã máy | Loại máy | Nhóm kỹ thuật | Nhóm sản lượng | OP1 | Sản phẩm. Cột <b>Sản phẩm</b>: model máy đang chạy, hiện sẵn trong danh sách khi bấm RUN; nhiều sản phẩm thì cách nhau dấu <b>;</b>. Ghi <b>x</b> ở cột OP1 nếu máy chạy OP1 (không nhập sản lượng), để trống nếu không. Dán thẳng nhiều dòng từ Excel được (dấu | hoặc Tab). Hiện ${(S.cfg.op1||[]).length} máy OP1.</p>
- <textarea id="cmm" style="min-height:160px">${esc(Object.keys(S.cfg.machines||{}).sort().map(k=>`${k} | ${S.cfg.machines[k].t} | ${S.cfg.machines[k].k||''} | ${S.cfg.machines[k].s||''} | ${(S.cfg.op1||[]).includes(k)?'x':''} | ${(S.cfg.machines[k].p||[]).join('; ')}`).join('\n'))}</textarea>
+ <h3 style="margin-top:14px">Danh mục máy (loại, nhóm kỹ thuật, nhóm sản lượng)</h3><p class="mute">Mỗi dòng: Mã máy | Loại | Nhóm KT ca ngày | Nhóm KT ca đêm | Nhóm SL ca ngày | Nhóm SL ca đêm | OP1 | Sản phẩm. Tên nhóm cũng là tên người phụ trách. Cột <b>OP1</b>: ghi <b>x</b> nếu máy chạy OP1 (không nhập sản lượng). Cột <b>Sản phẩm</b>: model hiện sẵn khi bấm RUN, nhiều sản phẩm cách nhau dấu <b>;</b>. Dán thẳng nhiều dòng từ Excel được (dấu | hoặc Tab). Hiện ${(S.cfg.op1||[]).length} máy OP1.</p>
+ <textarea id="cmm" style="min-height:160px">${esc(Object.keys(S.cfg.machines||{}).sort().map(k=>{const o=S.cfg.machines[k];return`${k} | ${o.t} | ${o.kd??o.k??''} | ${o.kn??o.k??''} | ${o.sd??o.s??''} | ${o.sn??o.s??''} | ${(S.cfg.op1||[]).includes(k)?'x':''} | ${(o.p||[]).join('; ')}`}).join('\n'))}</textarea>
  <div class="err" id="er"></div>
  <div class="row"><button class="btn primary" data-a="savecfg">Lưu cài đặt</button></div></div>${mcCard()}${memberCard()}${mesCard()}${tplCard()}`}
 
@@ -673,7 +695,7 @@ async function saveCfg(){
    let p=l.split('|').map(s=>s.trim());if(p.length===3)p=['SL',...p];
    if(p.length<4||!['SL','KT'].includes(p[0].toUpperCase()))throw new Error('Dòng nhóm sai định dạng (SL/KT | Tên | Người | Máy): '+l);
    return{id:'g'+(i+1),dept:p[0].toUpperCase(),name:p[1],manager:p[2],machines:p[3].split(',').map(s=>s.trim()).filter(Boolean)}});
-  const seen=new Set();groups.forEach(g=>g.machines.forEach(m=>{if(!/^[A-Za-z0-9_\-]+$/.test(m))throw new Error('Tên máy chỉ gồm chữ, số, - _ : '+m);const k=g.dept+'|'+m;if(seen.has(k))throw new Error('Máy trùng giữa các nhóm '+g.dept+': '+m);seen.add(k)}));
+  const seen=new Set();groups.forEach(g=>g.machines.forEach(m=>{if(!/^[A-Za-z0-9_\-]+$/.test(m))throw new Error('Tên máy chỉ gồm chữ, số, - _ : '+m);const k=g.dept+'|'+g.name+'|'+m;if(seen.has(k))throw new Error('Máy trùng trong nhóm '+g.dept+' '+g.name+': '+m);seen.add(k)}));
   const models=$('#cm').value.split('\n').map(x=>x.trim()).filter(Boolean).map(l=>{
    const p=l.split('|').map(s=>s.trim());
    const tools=(p[1]||'').split(',').map(s=>s.trim()).filter(Boolean).map(t=>{const q=t.split(':').map(s=>s.trim());
@@ -681,8 +703,9 @@ async function saveCfg(){
    return{name:p[0],tools,title:(p[3]||'').slice(0,80)}});
   const machines={},op1=[];
   $('#cmm').value.split('\n').map(x=>x.trim()).filter(Boolean).forEach(l=>{const p=l.split(/\s*\|\s*|\t/).map(x=>x.trim());
-   if(p.length<2||!/^[A-Za-z0-9_\-]+$/.test(p[0]))throw new Error('Dòng danh mục máy sai (Mã máy | Loại | Kỹ thuật | Sản lượng | OP1): '+l);
-   machines[p[0]]={t:p[1],k:p[2]||'',s:p[3]||''};const pr=prodList(p.slice(5).join(' | '));if(pr.length)machines[p[0]].p=pr;if(/^(x|1|true|op1)$/i.test(p[4]||''))op1.push(p[0])});
+   if(p.length<2||!/^[A-Za-z0-9_\-]+$/.test(p[0]))throw new Error('Dòng danh mục máy sai (Mã máy | Loại | KT ngày | KT đêm | SL ngày | SL đêm | OP1 | Sản phẩm): '+l);
+   const o={t:p[1],kd:p[2]||'',kn:p[3]||'',sd:p[4]||'',sn:p[5]||''};o.k=o.kd||o.kn;o.s=o.sd||o.sn;machines[p[0]]=o;
+   const pr=prodList(p.slice(7).join(' | '));if(pr.length)o.p=pr;if(/^(x|1|true|op1)$/i.test(p[6]||''))op1.push(p[0])});
   (S.cfg.op1||[]).forEach(m=>{if(!machines[m]&&!op1.includes(m))op1.push(m)});
   const keys=new Set([...groups.map(g=>g.dept+'|'+g.name),'KHO|Thủ kho']),members=Object.fromEntries(Object.entries(S.cfg.members||{}).filter(([k])=>keys.has(k)));
   await db.doc('config/main').set({groups,models,members,op1,assign:S.cfg.assign||{},machines});toast('Đã lưu cài đặt.')
@@ -1005,18 +1028,17 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-a]')
 const KHO_A=['directout','tplapply','mcapply','mcdl','hc','hscan','qreq','qin','iscan','kho','kg','kh','kp','item','newreq','givereq','rejreq','kcsv','doin','doinbulk','savecat'];
 /* ---------- CẬP NHẬT DANH MỤC MÁY / PHỤ TRÁCH / MODEL ---------- */
 function mcCard(){
- return`<div class="card" style="margin-top:10px"><h3>Cập nhật danh mục máy, người phụ trách, model</h3><p class="mute">Dùng khi đổi người phụ trách (2 tuần/lần), đổi nhóm máy hoặc thêm model. Bấm <b>Tải file hiện tại</b> để lấy file Excel đang dùng, sửa rồi tải lên. Có 3 sheet: DM_May (loại máy, nhóm, OP1), PhuTrach (người phụ trách từng nhóm), Model_Dao (dao theo model). Sheet nào không có thì bỏ qua. Máy không có trong file được giữ nguyên, không bị xoá.</p>
+ return`<div class="card" style="margin-top:10px"><h3>Cập nhật danh mục máy, người phụ trách, model</h3><p class="mute">Dùng khi đổi người phụ trách (2 tuần/lần), đổi nhóm máy hoặc thêm model. Bấm <b>Tải file hiện tại</b> để lấy file Excel đang dùng, sửa rồi tải lên. Có 2 sheet: DM_May (loại máy, nhóm kỹ thuật và nhóm sản lượng theo ca ngày/ca đêm, OP1, sản phẩm; tên nhóm cũng là người phụ trách) và Model_Dao (dao theo model). Sheet nào không có thì bỏ qua. Máy không có trong file được giữ nguyên, không bị xoá.</p>
  <div class="row"><button class="btn" data-a="mcdl">Tải file hiện tại</button></div>
  <input type="file" id="mcfile" accept=".xlsx,.xls,.csv" style="width:100%;margin-top:8px"><div id="mcout" style="margin-top:8px"></div></div>`}
 const deptOf=v=>{v=String(v||'').trim().toLowerCase();return v==='sl'||v==='sản lượng'?'SL':v==='kt'||v==='kỹ thuật'?'KT':''};
 function mcDownload(){
  const cfg=S.cfg,gn=(dept,m)=>(cfg.groups.find(g=>(g.dept||'SL')===dept&&(g.machines||[]).includes(m))||{}).name||'';
  const op=new Set(cfg.op1||[]);
- const may=[['Mã máy','Loại máy','Nhóm kỹ thuật','Nhóm sản lượng','OP1 (x)','Sản phẩm (Book1)']].concat(Object.keys(cfg.machines||{}).sort(natural).map(m=>{const o=cfg.machines[m];return[m,o.t||'',o.k||gn('KT',m),o.s||gn('SL',m),op.has(m)?'x':'',(o.p||[]).join('; ')]}));
- const pt=[['Bộ phận (SL/KT)','Tên nhóm','Người phụ trách']].concat(cfg.groups.map(g=>[g.dept||'SL',g.name,g.manager||'']));
+ const may=[['Mã máy','Loại máy',...GCOL.map(x=>x[1]),'OP1 (x)','Sản phẩm (Book1)']].concat(Object.keys(cfg.machines||{}).sort(natural).map(m=>{const o=cfg.machines[m],k0=o.k||gn('KT',m),s0=o.s||gn('SL',m);return[m,o.t||'',o.kd??k0,o.kn??k0,o.sd??s0,o.sn??s0,op.has(m)?'x':'',(o.p||[]).join('; ')]}));
  const md=[['Mã hàng (model)','Mã dao','Tên dao','Tuổi thọ chuẩn (pcs)','Tên hàng']];
  (cfg.models||[]).forEach(m=>{if(!(m.tools||[]).length)md.push([m.name,'','','',m.title||'']);(m.tools||[]).forEach(t=>md.push([m.name,t.code,t.name||'',t.life,m.title||'']))});
- const wb=XLSX.utils.book_new();[['DM_May',may],['PhuTrach',pt],['Model_Dao',md]].forEach(([n,a])=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(a),n));
+ const wb=XLSX.utils.book_new();[['DM_May',may],['Model_Dao',md]].forEach(([n,a])=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(a),n));
  XLSX.writeFile(wb,'MCT_DanhMuc_'+new Date().toISOString().slice(0,10)+'.xlsx')}
 function parseCatalog(wb){
  const T=v=>String(v==null?'':v).trim(),wb2={Sheets:{}},names={};
@@ -1026,7 +1048,7 @@ function parseCatalog(wb){
   else if(!wb2.Sheets.Model_Dao&&hdr(ws,'Mã hàng (model)')){wb2.Sheets.Model_Dao=ws;names.md=n}
   else if(!names.pt&&hdr(ws,'Tên nhóm')){names.pt=n}});
  const res=parseTemplate(wb2);res.managers=[];res.hasOp1=false;res.names=names;
- if(names.may){const h=hdr(wb2.Sheets.DM_May,'Mã máy');res.hasOp1=h.includes('OP1 (x)');res.hasProd=h.includes('Sản phẩm (Book1)')}
+ if(names.may){const h=hdr(wb2.Sheets.DM_May,'Mã máy');res.hasOp1=h.includes('OP1 (x)');res.hasProd=h.includes('Sản phẩm (Book1)');}
  if(names.pt){const A=XLSX.utils.sheet_to_json(wb.Sheets[names.pt],{header:1,defval:''});const hi=A.findIndex(r=>r.some(x=>T(x)==='Tên nhóm'));const H=A[hi].map(T);
   const ci=H.findIndex(x=>/^Bộ phận/.test(x)),cn=H.indexOf('Tên nhóm'),cm=H.findIndex(x=>/^Người phụ trách/.test(x));
   if(cm<0)res.errs.push('PhuTrach: thiếu cột "Người phụ trách"');
@@ -1035,17 +1057,16 @@ function parseCatalog(wb){
  return res}
 function catalogGroups(res){
  const gs=JSON.parse(JSON.stringify(S.cfg.groups||[]));
- const find=(d,nm)=>{let g=gs.find(x=>(x.dept||'SL')===d&&x.name===nm);if(!g){let n=gs.length+1;while(gs.some(x=>x.id==='g'+n))n++;g={id:'g'+n,dept:d,name:nm,manager:'',machines:[]};gs.push(g)}return g};
- [['KT','k'],['SL','s']].forEach(([d,f])=>{Object.entries(res.machines).forEach(([m,o])=>{const nm=(o[f]||'').trim();if(!nm)return;
-  gs.forEach(g=>{if((g.dept||'SL')===d)g.machines=(g.machines||[]).filter(x=>x!==m)});const g=find(d,nm);g.machines=[...g.machines,m]})});
- res.managers.forEach(x=>{find(x.dept,x.name).manager=x.manager});
+ const find=(d,nm)=>{let g=gs.find(x=>(x.dept||'SL')===d&&x.name===nm);if(!g){let n=gs.length+1;while(gs.some(x=>x.id==='g'+n))n++;g={id:'g'+n,dept:d,name:nm,manager:nm,machines:[]};gs.push(g)}return g};
+ Object.entries(GF).forEach(([d,fs])=>{Object.entries(res.machines).forEach(([m,o])=>{const names=[...new Set(fs.map(f=>(o[f]||'').trim()).filter(Boolean))];if(!names.length)return;
+  gs.forEach(g=>{if((g.dept||'SL')===d)g.machines=(g.machines||[]).filter(x=>x!==m)});names.forEach(nm=>{const g=find(d,nm);g.machines=[...g.machines,m]})})});
  gs.forEach(g=>{g.machines=[...new Set(g.machines||[])].sort(natural)});
  return gs}
 async function applyCatalog(res){
  const upd={},cfg=S.cfg;
- if(Object.keys(res.machines).length){if(!res.hasProd)Object.keys(res.machines).forEach(m=>{const o=(cfg.machines||{})[m];if(o?.p?.length)res.machines[m].p=o.p});upd.machines={...(cfg.machines||{}),...res.machines};
+ if(Object.keys(res.machines).length){carryMeta(res,cfg.machines);upd.machines={...(cfg.machines||{}),...res.machines};
   if(res.hasOp1){const inFile=new Set(Object.keys(res.machines));upd.op1=[...new Set([...(cfg.op1||[]).filter(m=>!inFile.has(m)),...res.op1])]}}
- if(Object.keys(res.machines).length||res.managers.length)upd.groups=catalogGroups(res);
+ if(Object.keys(res.machines).length)upd.groups=catalogGroups(res);
  if(Object.keys(res.models).length){const ms=JSON.parse(JSON.stringify(cfg.models||[]));
   Object.entries(res.models).forEach(([name,o])=>{const i=ms.findIndex(m=>m.name===name);if(i>=0){ms[i].tools=o.tools;if(o.title)ms[i].title=o.title}else ms.push({name,tools:o.tools,title:o.title})});upd.models=ms}
  if(!Object.keys(upd).length)throw new Error('Không có gì để cập nhật');
@@ -1056,11 +1077,11 @@ document.addEventListener('change',async e=>{
  try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),res=parseCatalog(wb);window._mc=res;const cfg=S.cfg,L=[];
   const gOf=(d,m)=>((cfg.groups||[]).find(g=>(g.dept||'SL')===d&&(g.machines||[]).includes(m))||{}).name||'';
   const ms=Object.keys(res.machines);
-  if(ms.length){const nw=ms.filter(m=>!(cfg.machines||{})[m]),ch=ms.filter(m=>{const o=(cfg.machines||{})[m];return o&&(o.t!==res.machines[m].t||o.k!==res.machines[m].k||o.s!==res.machines[m].s||(res.hasProd&&JSON.stringify(o.p||[])!==JSON.stringify(res.machines[m].p||[])))});
-   const mv=ms.filter(m=>[['KT','k'],['SL','s']].some(([d,k])=>{const n=(res.machines[m][k]||'').trim();return n&&gOf(d,m)&&gOf(d,m)!==n}));
+  if(ms.length){const nw=ms.filter(m=>!(cfg.machines||{})[m]),ch=ms.filter(m=>{const o=(cfg.machines||{})[m];return o&&(o.t!==res.machines[m].t||GCOL.some(([k])=>(o[k]||'')!==(res.machines[m][k]||''))||(res.hasProd&&JSON.stringify(o.p||[])!==JSON.stringify(res.machines[m].p||[])))});
+   const mv=ms.filter(m=>{const o=(cfg.machines||{})[m];return o&&GCOL.some(([k])=>o[k]!==undefined&&o[k]!==(res.machines[m][k]||'')&&res.machines[m][k]!==undefined)});
    L.push('Máy trong file: '+ms.length+' ('+nw.length+' mới, '+ch.length+' đổi thông tin, '+mv.length+' chuyển nhóm)'+(mv.length?': '+mv.slice(0,8).join(', ')+(mv.length>8?'…':''):''));
    const keep=Object.keys(cfg.machines||{}).filter(m=>!res.machines[m]).length;if(keep)L.push('Giữ nguyên '+keep+' máy không có trong file');
-   if(res.hasOp1)L.push('Máy OP1 trong file: '+res.op1.length);if(res.hasProd)L.push('Máy có sản phẩm: '+ms.filter(m=>(res.machines[m].p||[]).length).length+'/'+ms.length)}
+   if(res.hasOp1)L.push('Máy OP1 trong file: '+res.op1.length);if(res.hasProd)L.push('Máy có sản phẩm: '+ms.filter(m=>(res.machines[m].p||[]).length).length+'/'+ms.length);}
   res.managers.forEach(x=>{const g=(cfg.groups||[]).find(y=>(y.dept||'SL')===x.dept&&y.name===x.name);if(!g)L.push('Nhóm mới: '+x.dept+' '+x.name+(x.manager?' - '+x.manager:''));else if((g.manager||'')!==x.manager)L.push(x.dept+' '+x.name+': '+(g.manager||'(trống)')+' → '+(x.manager||'(trống)'))});
   const mo=Object.keys(res.models);if(mo.length){const nw=mo.filter(n=>!(cfg.models||[]).some(m=>m.name===n)),ch=mo.filter(n=>{const m=(cfg.models||[]).find(x=>x.name===n);return m&&JSON.stringify(m.tools)!==JSON.stringify(res.models[n].tools)});L.push('Model: '+mo.length+' ('+nw.length+' mới, '+ch.length+' đổi dao)')}
   out.innerHTML=(L.map(x=>'<div>'+esc(x)+'</div>').join('')||'<div class="mute">Không có thay đổi nào.</div>')+(res.errs.length?`<div class="err">Có ${res.errs.length} lỗi, sửa file rồi chọn lại:<br>${res.errs.slice(0,10).map(esc).join('<br>')}</div>`:(L.length?'<div class="row"><button class="btn primary" data-a="mcapply">Áp dụng cập nhật</button></div>':''))
@@ -1101,7 +1122,9 @@ function parseTemplate(wb){
   if(o.tools.some(x=>x.code===dc))return E(at+'dao '+dc+' bị trùng trong model '+m);o.tools.push({code:dc,name:T(r['Tên dao']),life})})}
  const mm=sh('DM_May','Mã máy');
  if(mm){res.has.mm=1;mm.forEach(r=>{const m=T(r['Mã máy']);if(!m)return;if(!/^[A-Za-z0-9_\-]+$/.test(m))return E('DM_May dòng '+r.__row+': mã máy chỉ gồm chữ, số, - _ ('+m+')');
-  res.machines[m]={t:T(r['Loại máy']),k:T(r['Nhóm kỹ thuật']),s:T(r['Nhóm sản lượng'])};const pr=prodList(r['Sản phẩm (Book1)']);if(pr.length)res.machines[m].p=pr;if('Sản phẩm (Book1)' in r)res.hasProd=true;if(/^(x|1|true)$/i.test(T(r['OP1 (x)'])))res.op1.push(m)})}
+  const o={t:T(r['Loại máy'])},newG=GCOL.some(([k,h])=>h in r);
+  if(newG){GCOL.forEach(([k,h])=>{o[k]=T(r[h]).slice(0,60)});res.hasGrp=true}else{const k0=T(r['Nhóm kỹ thuật']).slice(0,60),s0=T(r['Nhóm sản lượng']).slice(0,60);o.kd=o.kn=k0;o.sd=o.sn=s0}
+  o.k=o.kd||o.kn;o.s=o.sd||o.sn;res.machines[m]=o;const pr=prodList(r['Sản phẩm (Book1)']);if(pr.length)res.machines[m].p=pr;if('Sản phẩm (Book1)' in r)res.hasProd=true;if(/^(x|1|true)$/i.test(T(r['OP1 (x)'])))res.op1.push(m)})}
  return res}
 async function applyTemplate(res,prog){
  let n=0;const list=[];
@@ -1113,9 +1136,9 @@ async function applyTemplate(res,prog){
  const upd={};
  if(res.has.md&&Object.keys(res.models).length){const ms=JSON.parse(JSON.stringify(S.cfg.models||[]));
   Object.entries(res.models).forEach(([name,o])=>{const i=ms.findIndex(m=>m.name===name);if(i>=0){ms[i].tools=o.tools;if(o.title)ms[i].title=o.title}else ms.push({name,tools:o.tools,title:o.title})});upd.models=ms}
- if(res.has.mm&&Object.keys(res.machines).length){if(!res.hasProd)Object.keys(res.machines).forEach(m=>{const o=S.cfg.machines?.[m];if(o?.p?.length)res.machines[m].p=o.p});upd.machines=res.machines;upd.op1=res.op1;
+ if(res.has.mm&&Object.keys(res.machines).length){carryMeta(res,S.cfg.machines);upd.machines=res.machines;upd.op1=res.op1;
   const gs=JSON.parse(JSON.stringify(S.cfg.groups||[]));
-  [['KT','k'],['SL','s']].forEach(([dept,f])=>{const by={};Object.entries(res.machines).forEach(([m,o])=>{const nm=(o[f]||'').trim();if(nm)(by[nm]=by[nm]||[]).push(m)});
+  [['KT',GF.KT],['SL',GF.SL]].forEach(([dept,fs])=>{const by={};Object.entries(res.machines).forEach(([m,o])=>{fs.forEach(f=>{const nm=(o[f]||'').trim();if(nm&&!(by[nm]||[]).includes(m))(by[nm]=by[nm]||[]).push(m)})});
    Object.entries(by).forEach(([nm,ms])=>{let g=gs.find(x=>(x.dept||'SL')===dept&&x.name===nm);if(!g){let n=gs.length+1;while(gs.some(x=>x.id==='g'+n))n++;g={id:'g'+n,dept,name:nm,manager:'',machines:[]};gs.push(g)}
     g.machines=[...new Set([...(g.machines||[]),...ms])].sort(natural)})});
   upd.groups=gs}
@@ -1142,7 +1165,7 @@ function render(){
  const tabs=[['SL','Sản lượng'],['KT','Kỹ thuật'],['report','Báo cáo'],['inv','Kho'+(isKeeper()&&S.pendN?' ('+S.pendN+')':'')]];if(isAdmin)tabs.push(['settings','Cài đặt']);
  const on=k=>k==='SL'||k==='KT'?(S.tab==='work'&&S.dept===k):S.tab===k;
  $('#nav').innerHTML=tabs.map(([k,n])=>`<button data-tab="${k}" class="${on(k)?'on':''}">${n}</button>`).join('');
- $('#grps').innerHTML=(S.tab==='settings'||S.tab==='inv')?'':dg().map(x=>`<button class="chip ${S.group===x.id?'on':''}" data-grp="${x.id}">${esc(x.name)}</button>`).join('')+`<button class="chip ${S.group==='ALL'?'on':''}" data-grp="ALL">Tất cả</button>`;
+ $('#grps').innerHTML=(S.tab==='settings'||S.tab==='inv')?'':dgv().map(x=>`<button class="chip ${S.group===x.id?'on':''}" data-grp="${x.id}">${esc(x.name)}</button>`).join('')+`<button class="chip ${S.group==='ALL'?'on':''}" data-grp="ALL">Tất cả</button>`;
  const showSlots=S.tab==='work'&&S.dept==='SL'&&db&&S.loaded.prod;
  if(showSlots){const ms=viewMachines(),cs=curSlot();
   $('#slots').innerHTML=slotHours(S.ctx.shift).map((_,i)=>{const n=ms.filter(m=>slotEntry(m,i)).length;
@@ -1184,7 +1207,7 @@ document.addEventListener('click',async e=>{
   const picked=()=>viewMachines().filter(x=>S.selected.has(x));
   if(a==='selstop')stopAllModal(picked());else if(a==='selrun')runAllModal(picked());else
   if(a==='stopall')stopAllModal();else if(a==='runall')runAllModal();else if(a==='tile')tileModal(m);else if(a==='ptile'){if(isOP1(m)){toast('Máy '+m+' chạy OP1, không nhập sản lượng.');return}const sx=S.state[m];if(!sx||sx.status==='IDLE')toast('Máy '+m+' chưa chạy nên chưa nhập được sản lượng. Vào Kỹ thuật bấm RUN trước.');else prodModal(m)}else if(a==='start')startModal(m);else if(a==='stop')stopModal(m);else if(a==='run')runModal(m);
-  else if(a==='model')modelModal(m);else if(a==='saveprod')await saveProd(m);
+  else if(a==='model')modelModal(m);else if(a==='saveprod')await saveProd(m);else if(a==='quick')quickProd();
  }catch(err){toast('Lỗi: '+(err.message||err.code||err))}});
 
 /* ---------- kết nối dữ liệu ---------- */
@@ -1195,10 +1218,10 @@ function subLogs(){
 function subProd(){
  S.unsub.prod&&S.unsub.prod();S.loaded.prod=false;
  S.unsub.prod=db.collection('prod').where('date','==',S.ctx.date).onSnapshot(sn=>{S.prod=sn.docs.map(d=>d.data());S.loaded.prod=true;rr()},e=>{S.err='Lỗi đọc sản lượng: '+e.code;rr()})}
-function setCtx(c){S.ctx=c;S.slot=null;$('#dt').value=c.date;$('#sh').value=c.shift;if(db){subLogs();subProd()}rr()}
+function setCtx(c){S.ctx=c;S.slot=null;try{fixGroup()}catch(e){}$('#dt').value=c.date;$('#sh').value=c.shift;if(db){subLogs();subProd()}rr()}
 
 $('#who').value=load('mct_who');$('#inf').onclick=()=>{$('#infp').hidden=!$('#infp').hidden};if(!who())$('#infp').hidden=false;$('#who').addEventListener('change',()=>{store('mct_who',who());rr()});
-function fixGroup(){if(!S.group||(S.group!=='ALL'&&!dg().find(g=>g.id===S.group)))S.group=dg()[0]?.id||'ALL'}
+function fixGroup(){if(!S.group||(S.group!=='ALL'&&!dgv().find(g=>g.id===S.group)))S.group=dgv()[0]?.id||'ALL'}
 $('#dt').addEventListener('change',()=>{if($('#dt').value)setCtx({date:$('#dt').value,shift:$('#sh').value})});
 $('#sh').addEventListener('change',()=>setCtx({date:$('#dt').value,shift:$('#sh').value}));
 $('#now').addEventListener('click',()=>setCtx(shiftOfNow()));
