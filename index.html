@@ -521,9 +521,10 @@ function runAllModal(arg){
  ${stopped.length?`<div class="mute"><b>${stopped.length} máy đang dừng</b> sẽ chạy lại: ${esc(stopped.join(', '))}</div>
  <label class="fld">Giờ chạy lại<input id="tm" type="time" value="${pad(now.getHours())}:${pad(now.getMinutes())}"></label>
  <label class="fld">Ghi chú nếu sửa giờ<input id="nt" maxlength="200"></label>`:''}
- ${idle.length?`<div style="margin-top:12px"><b>${idle.length} máy chưa chạy · chọn model cho từng máy</b> <span class="mute">(để "bỏ qua" thì máy đó không chạy)</span></div>
+ ${idle.length?`<div style="margin-top:12px"><b>${idle.length} máy chưa chạy</b> <span class="mute">sẽ chạy theo model đã gán trong danh mục máy. Máy chưa có model: chọn bên dưới, hoặc để "bỏ qua".</span></div>
  <label class="fld">Đặt cùng một model cho các máy còn "bỏ qua"<select id="mm"><option value="">—</option>${opts}</select></label>
- <div id="idlst" style="max-height:34vh;overflow:auto">${idle.map(m=>`<div class="row tight" style="align-items:center;margin:4px 0"><b style="min-width:84px">${esc(dispName(m))}</b><select data-pm="${esc(m)}" style="flex:1;min-width:0">${pmOpt(m)}</select></div>`).join('')}</div>
+ <div id="idlst" style="max-height:34vh;overflow:auto">${idle.map(m=>{const d=assignedFor(m)[0]?.part||'';return`<div class="row tight" style="align-items:center;margin:4px 0"><b style="min-width:84px">${esc(dispName(m))}</b>${d?`<span class="mute pmt" style="flex:1">→ ${esc(d)}</span>`:''}<select data-pm="${esc(m)}" class="${d?'pmx':''}" style="flex:1;min-width:0;${d?'display:none':''}">${pmOpt(m)}</select></div>`}).join('')}</div>
+ ${idle.some(m=>assignedFor(m)[0])?'<div class="row tight"><button class="btn sm" id="chg">✎ Đổi model</button></div>':''}
  <div class="mute" id="idsum"></div>
  <label class="fld">Giờ bắt đầu (mặc định đầu ca)<input id="ts" type="time" value="${fmtTime(ws)}"></label>`:''}
  <div class="err" id="er"></div>
@@ -536,6 +537,7 @@ function runAllModal(arg){
   $('#mok').textContent='RUN '+(stopped.length+ok.length)+' máy';$('#mok').disabled=!(stopped.length+ok.length)};
  mbox.querySelectorAll('select[data-pm]').forEach(x=>{x.onchange=refresh});
  if($('#mm'))$('#mm').onchange=()=>{const v=$('#mm').value;if(v)mbox.querySelectorAll('select[data-pm]').forEach(x=>{if(x.value)return;if(![...x.options].some(o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent=v;x.appendChild(o)}x.value=v});refresh()};
+ if($('#chg'))$('#chg').onclick=()=>{mbox.querySelectorAll('.pmx').forEach(x=>{x.style.display=''});mbox.querySelectorAll('.pmt').forEach(x=>{x.style.display='none'});$('#chg').style.display='none'};
  refresh();
  $('#mok').onclick=async()=>{
   const er=$('#er');er.textContent='';let tRun=0,edited=false;const nt=($('#nt')?.value||'').trim();
