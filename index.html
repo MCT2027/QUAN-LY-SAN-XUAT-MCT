@@ -515,22 +515,28 @@ function runAllModal(arg){
  if(!stopped.length&&!idle.length){toast(broken.length?broken.length+' máy đang hỏng, không chạy bằng lệnh chọn tất cả. Mở từng máy, tích xác nhận đã sửa xong rồi RUN.':'Không có máy nào cần chạy trong nhóm này.');return}
  const cur=shiftOfNow(),[ws]=win(cur.date,cur.shift),now=new Date();
  const opts=S.cfg.models.map(x=>`<option>${esc(x.name)}</option>`).join('');
+ const pmOpt=m=>{const seen=new Set(),as=assignedFor(m).map(x=>x.part),def=as[0]||'';let h='<option value="">— bỏ qua —</option>';[...as,...S.cfg.models.filter(x=>x.tools.length).map(x=>x.name)].forEach(p=>{if(seen.has(p))return;seen.add(p);h+=`<option value="${esc(p)}" ${p===def?'selected':''}>${esc(p)}</option>`});return h};
  openModal(`<h3>RUN tất cả</h3>
  ${broken.length?`<div class="err" style="margin-bottom:8px"><b>${broken.length} máy hỏng không chạy theo lệnh này:</b> ${esc(broken.map(dispName).join(', '))}. Mở từng máy, tích xác nhận đã sửa xong rồi RUN.</div>`:''}
  ${stopped.length?`<div class="mute"><b>${stopped.length} máy đang dừng</b> sẽ chạy lại: ${esc(stopped.join(', '))}</div>
  <label class="fld">Giờ chạy lại<input id="tm" type="time" value="${pad(now.getHours())}:${pad(now.getMinutes())}"></label>
  <label class="fld">Ghi chú nếu sửa giờ<input id="nt" maxlength="200"></label>`:''}
- ${idle.length?`<div class="mute" style="margin-top:12px" id="idlst"></div>
- <label class="fld">Model chung cho máy chưa có sản phẩm (để trống = bỏ qua các máy đó, chỉ chạy máy đã có sản phẩm)<select id="mm"><option value="">—</option>${opts}</select></label>
+ ${idle.length?`<div style="margin-top:12px"><b>${idle.length} máy chưa chạy · chọn model cho từng máy</b> <span class="mute">(để "bỏ qua" thì máy đó không chạy)</span></div>
+ <label class="fld">Đặt cùng một model cho các máy còn "bỏ qua"<select id="mm"><option value="">—</option>${opts}</select></label>
+ <div id="idlst" style="max-height:34vh;overflow:auto">${idle.map(m=>`<div class="row tight" style="align-items:center;margin:4px 0"><b style="min-width:84px">${esc(dispName(m))}</b><select data-pm="${esc(m)}" style="flex:1;min-width:0">${pmOpt(m)}</select></div>`).join('')}</div>
+ <div class="mute" id="idsum"></div>
  <label class="fld">Giờ bắt đầu (mặc định đầu ca)<input id="ts" type="time" value="${fmtTime(ws)}"></label>`:''}
  <div class="err" id="er"></div>
  <div class="row"><button class="btn" id="mc">Hủy</button><button class="btn run" id="mok"></button></div>`);
  $('#mc').onclick=closeModal;
- const readyL=()=>{const g=$('#mm')?$('#mm').value:'x';const ok=idle.filter(x=>assignedFor(x)[0]||g),skip=idle.filter(x=>!(assignedFor(x)[0]||g));return{ok,skip}};
- const refresh=()=>{const{ok,skip}=readyL(),b=$('#idlst');
-  if(b)b.innerHTML=idle.length?`<b>${ok.length} máy chưa chạy</b> sẽ bắt đầu: ${esc(ok.map(dispName).join(', ')||'—')}`+(skip.length?`<br><b style="color:var(--bad,#c0392b)">${skip.length} máy chưa có sản phẩm, để lại không chạy:</b> ${esc(skip.map(dispName).join(', '))}`:''):'';
+ const pm=()=>{const o={};mbox.querySelectorAll('select[data-pm]').forEach(x=>{o[x.dataset.pm]=x.value});return o};
+ const readyL=()=>{const o=pm();return{ok:idle.filter(x=>o[x]),skip:idle.filter(x=>!o[x])}};
+ const refresh=()=>{const{ok,skip}=readyL(),b=$('#idsum');
+  if(b)b.innerHTML=skip.length?`<b style="color:var(--bad,#c0392b)">${skip.length} máy bỏ qua, không chạy:</b> ${esc(skip.map(dispName).join(', '))}`:'';
   $('#mok').textContent='RUN '+(stopped.length+ok.length)+' máy';$('#mok').disabled=!(stopped.length+ok.length)};
- if($('#mm'))$('#mm').onchange=refresh;refresh();
+ mbox.querySelectorAll('select[data-pm]').forEach(x=>{x.onchange=refresh});
+ if($('#mm'))$('#mm').onchange=()=>{const v=$('#mm').value;if(v)mbox.querySelectorAll('select[data-pm]').forEach(x=>{if(x.value)return;if(![...x.options].some(o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent=v;x.appendChild(o)}x.value=v});refresh()};
+ refresh();
  $('#mok').onclick=async()=>{
   const er=$('#er');er.textContent='';let tRun=0,edited=false;const nt=($('#nt')?.value||'').trim();
   if(stopped.length){
@@ -539,15 +545,15 @@ function runAllModal(arg){
    if(t<mx){er.textContent='Giờ chạy lại phải sau giờ dừng muộn nhất ('+fmtTime(mx)+').';return}
    edited=Math.abs(t-n)>90000;if(edited&&!nt){er.textContent='Sửa giờ phải ghi chú lý do.';return}
    tRun=edited?t:n}
-  let tSt=0,model='';
+  let tSt=0;
   if(idle.length){
-   model=$('#mm').value;if(!stopped.length&&!readyL().ok.length){er.textContent='Chưa máy nào có sản phẩm. Chọn model chung hoặc gán sản phẩm trong danh mục máy.';return}
+   if(!stopped.length&&!readyL().ok.length){er.textContent='Chưa chọn model cho máy nào.';return}
    const[h,mi]=$('#ts').value.split(':').map(Number),[y,mo,d]=cur.date.split('-').map(Number);let t=new Date(y,mo-1,d,h,mi).getTime();if(t<ws)t+=86400000;
    if(t>Date.now()+60000){er.textContent='Giờ bắt đầu không được ở tương lai.';return}tSt=t}
-  const skipped=readyL().skip;$('#mok').disabled=true;let n=0;const tot=stopped.length+readyL().ok.length;
+  const skipped=readyL().skip,pmv=pm();$('#mok').disabled=true;let n=0;const tot=stopped.length+readyL().ok.length;
   try{for(const m of stopped){if(stOf(m)!=='STOP')continue;$('#mok').textContent='Đang ghi '+(++n)+'/'+tot;await doRun(m,tRun,edited,nt)}
-   for(const m of idle){if(stOf(m)!=='IDLE')continue;const md=assignedFor(m)[0]?.part||model;if(!md)continue;$('#mok').textContent='Đang ghi '+(++n)+'/'+tot;await doStart(m,md,tSt)}
-   toast('Đã chạy '+n+' máy.'+(skipped.length?' Để lại '+skipped.length+' máy chưa có sản phẩm: '+skipped.map(dispName).join(', '):''));if(arg){S.selMode=false;S.selected.clear()}closeModal();rr()}catch(e){er.textContent='Lỗi: '+(e.message||e.code||e)+' (đã ghi '+n+' máy)';$('#mok').disabled=false}}}
+   for(const m of idle){if(stOf(m)!=='IDLE')continue;const md=pmv[m];if(!md)continue;$('#mok').textContent='Đang ghi '+(++n)+'/'+tot;await doStart(m,md,tSt)}
+   toast('Đã chạy '+n+' máy.'+(skipped.length?' Để lại '+skipped.length+' máy chưa chọn model: '+skipped.map(dispName).join(', '):''));if(arg){S.selMode=false;S.selected.clear()}closeModal();rr()}catch(e){er.textContent='Lỗi: '+(e.message||e.code||e)+' (đã ghi '+n+' máy)';$('#mok').disabled=false}}}
 
 function tileModal(m){
  const st=S.state[m]||{status:'IDLE'};
