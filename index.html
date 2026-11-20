@@ -774,8 +774,9 @@ function adjModal(code,cur){
   if(v===''||!(+v>=0)||!Number.isInteger(+v)){$('#er').textContent='Nhập số tồn thực tế (số nguyên ≥ 0).';return}if(!n){$('#er').textContent='Ghi lý do điều chỉnh.';return}
   if(!needWho())return;const d=+v-cur;if(!d){closeModal();return}$('#mok').disabled=true;
   await addTx({type:'ADJ',code,qty:d,note:'Kiểm kê: '+n});closeModal();toast('Đã ghi điều chỉnh '+(d>0?'+':'')+d)}}
-async function addTx(t,id){const d={id:id||'t'+Date.now().toString(36)+uid(),at:Date.now(),by:who(),byId:myId||null,price:+S.items[t.code]?.price||0,machine:'',note:'',...t};
- await db.doc('inv_tx/'+d.id).set(d);return d}
+const mkTx=(t,id)=>({id:id||'t'+Date.now().toString(36)+uid(),at:Date.now(),by:who(),byId:myId||null,price:+S.items[t.code]?.price||0,machine:'',note:'',...t});
+async function addTx(t,id){const d=mkTx(t,id);await db.doc('inv_tx/'+d.id).set(d);return d}
+async function bulkSet(list,prog){if(typeof db.batch==='function'){for(let i=0;i<list.length;i+=20){await db.batch(list.slice(i,i+20).map(x=>({op:'set',path:x.path,data:x.data})));if(prog)prog(Math.min(i+20,list.length),list.length)}}else{for(let i=0;i<list.length;i++){await db.doc(list[i].path).set(list[i].data);if(prog)prog(i+1,list.length)}}}
 function invReq(){
  const keeper=isKeeper();
  const rows=S.reqs.slice(0,60).map(r=>{const st=r.status==='PEND'?'<span class="tag warn">Chờ xuất</span>':r.status==='DONE'?'<span class="tag RUN">Đã xuất</span>':'<span class="tag STOP">Từ chối</span>';
@@ -981,7 +982,7 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-a]')
   if(a==='rejreq'){if(!isKeeper()){toast('Chỉ thủ kho được từ chối.');return}rejModal(t.dataset.id);return}
   if(!isKeeper()){toast('Chỉ thủ kho được thực hiện thao tác này.');return}
   if(a==='tplapply'){if(!isAdmin){toast('Chỉ admin được nạp file.');return}const r=window._tpl;if(!r||r.errs.length){toast('Chưa có dữ liệu hợp lệ để nạp.');return}t.disabled=true;
-   try{const n=await applyTemplate(r);window._tpl=null;$('#tplout').innerHTML='<div class="banner">Đã nạp xong.</div>';toast('Đã nạp dữ liệu từ file Excel.')}catch(x){t.disabled=false;toast('Lỗi khi nạp: '+(x.message||x.code||x))}return}
+   try{const n=await applyTemplate(r,(i,m)=>{$('#tplout').innerHTML='<div class="banner">Đang nạp '+i+'/'+m+'… đừng đóng trang.</div>'});window._tpl=null;$('#tplout').innerHTML='<div class="banner">Đã nạp xong.</div>';toast('Đã nạp dữ liệu từ file Excel.')}catch(x){t.disabled=false;$('#tplout').innerHTML='<div class="err">Nạp bị dừng giữa chừng: '+esc(x.message||x.code||String(x))+'. Bấm Nạp lại: phần đã nạp không bị nhập đôi.</div>'+'<div class="row"><button class="btn primary" data-a="tplapply">Nạp lại</button></div>'}return}
   if(a==='savecat'){await saveCat();return}
   if(a==='doin'){const er=$('#er');er.textContent='';const c=resolveItem($('#ic').value),q=+$('#iq').value;if(!c){er.textContent='Chọn mã vật tư có trong danh mục.';return}
    try{const po=($('#in').value||'').trim();await doIn(c,q,po);S.lastPo=po;$('#ic').value='';$('#iq').value='';$('#iname').textContent='';toast('Đã nhập '+q+' × '+c)}catch(x){er.textContent=x.message}return}
@@ -1030,12 +1031,13 @@ function parseTemplate(wb){
  if(mm){res.has.mm=1;mm.forEach(r=>{const m=T(r['Mã máy']);if(!m)return;if(!/^[A-Za-z0-9_\-]+$/.test(m))return E('DM_May dòng '+r.__row+': mã máy chỉ gồm chữ, số, - _ ('+m+')');
   res.machines[m]={t:T(r['Loại máy']),k:T(r['Nhóm kỹ thuật']),s:T(r['Nhóm sản lượng'])};if(/^(x|1|true)$/i.test(T(r['OP1 (x)'])))res.op1.push(m)})}
  return res}
-async function applyTemplate(res){
- let n=0;
- for(const it of res.items){const old=S.items[it.code];if(old&&['name','grp','spec','unit','barcode','min','price'].every(k=>old[k]==it[k]))continue;await db.doc('inv_items/'+it.code).set(it);n++}
+async function applyTemplate(res,prog){
+ let n=0;const list=[];
+ for(const it of res.items){const old=S.items[it.code];if(old&&['name','grp','spec','unit','barcode','min','price'].every(k=>old[k]==it[k]))continue;list.push({path:'inv_items/'+it.code,data:it});n++}
  const price=Object.fromEntries(res.items.map(x=>[x.code,x.price]));
- for(const x of (res.opens||[]))await addTx({type:'IN',code:x.code,qty:x.qty,note:'Tồn đầu kỳ',price:+(res.items.find(i=>i.code===x.code)||{}).price||0},'open_'+x.code);
- for(const x of res.ins)await addTx({type:'IN',code:x.code,qty:x.qty,note:x.po||'Nhập từ Excel',price:price[x.code]!=null?price[x.code]:(+S.items[x.code]?.price||0)},'imp_'+djb(x.row+'|'+x.code+'|'+x.qty+'|'+x.po));
+ for(const x of (res.opens||[])){const d=mkTx({type:'IN',code:x.code,qty:x.qty,note:'Tồn đầu kỳ',price:price[x.code]||0},'open_'+x.code);list.push({path:'inv_tx/'+d.id,data:d})}
+ for(const x of res.ins){const d=mkTx({type:'IN',code:x.code,qty:x.qty,note:x.po||'Nhập từ Excel',price:price[x.code]!=null?price[x.code]:(+S.items[x.code]?.price||0)},'imp_'+djb(x.row+'|'+x.code+'|'+x.qty+'|'+x.po));list.push({path:'inv_tx/'+d.id,data:d})}
+ await bulkSet(list,prog);
  const upd={};
  if(res.has.md&&Object.keys(res.models).length){const ms=JSON.parse(JSON.stringify(S.cfg.models||[]));
   Object.entries(res.models).forEach(([name,o])=>{const i=ms.findIndex(m=>m.name===name);if(i>=0){ms[i].tools=o.tools;if(o.title)ms[i].title=o.title}else ms.push({name,tools:o.tools,title:o.title})});upd.models=ms}
@@ -1161,7 +1163,7 @@ function remoteDb(api,cred,me,users){
  if(typeof setInterval==='function'&&typeof document!=='undefined'&&document.addEventListener){
   setInterval(()=>{if(document.visibilityState!=='hidden')sync(false).catch(()=>{})},20000);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')sync(false).catch(()=>{})})}
- return{db:{doc,collection:coll},user,sync,role:me.role}}
+ return{db:{doc,collection:coll,batch:ops=>write(ops)},user,sync,role:me.role}}
 async function remoteLogin(api,id,pw){
  const r=await fetch(api,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({a:'login',id,pw})});
  const j=await r.json();if(!j.ok)throw Object.assign(new Error(j.err),{code:j.err});
