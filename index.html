@@ -352,10 +352,12 @@ function runModal(m){
  openModal(`<h3>${esc(m)} · Chạy lại</h3>
  <div class="mute">Đang dừng: <b>${esc(RN[S.logs.flatMap(l=>l.stops).find(s=>s.id===st.openStop?.id)?.reason]||'')}</b> từ ${fmtTime(st.since)}</div>
  <label class="fld">Giờ chạy lại (sửa nếu quên bấm)<input id="tm" type="time" value="${pad(now.getHours())}:${pad(now.getMinutes())}"></label>
- <label class="fld">Ghi chú nếu sửa giờ<input id="nt" maxlength="200"></label><div class="err" id="er"></div>
+ <label class="fld">Ghi chú nếu sửa giờ<input id="nt" maxlength="200"></label>
+ ${st.reason==='ST02'?'<label class="fld" style="flex-direction:row;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="okfix" style="width:auto"><span><b>Xác nhận máy đã sửa xong</b>, cho chạy lại</span></label>':''}<div class="err" id="er"></div>
  <div class="row"><button class="btn" id="mc">Hủy</button><button class="btn run" id="mok">RUN</button></div>`);
  $('#mc').onclick=closeModal;
  $('#mok').onclick=async()=>{
+  if(st.reason==='ST02'&&!$('#okfix').checked){$('#er').textContent='Máy đang hỏng: tích xác nhận đã sửa xong mới được chạy lại.';return}
   const[h,mi]=$('#tm').value.split(':').map(Number),n=Date.now();let t=new Date();t.setHours(h,mi,0,0);t=t.getTime();
   if(t>n+60000)t-=86400000;
   if(t<st.since){$('#er').textContent='Giờ chạy lại phải sau giờ bắt đầu dừng ('+fmtTime(st.since)+').';return}
@@ -476,13 +478,14 @@ document.addEventListener('input',async e=>{const el=e.target;if(!el.classList||
 const isOP1=m=>(S.cfg.op1||[]).some(x=>String(x).toUpperCase()===String(m).toUpperCase());
 const shortPart=p=>String(p||'').replace(/-MC00$/,'').trim();
 const dispName=m=>String(m).replace(/^LMSV-/,'');
-function assignedFor(m){const sh=shiftOfNow().shift,A=S.cfg.assign||{};return A[sh]?.map?.[m]||A[sh==='D'?'N':'D']?.map?.[m]||[]}
+const prodList=v=>String(v==null?'':v).split(/[;\n]/).map(x=>x.trim()).filter(Boolean).slice(0,6).map(x=>x.slice(0,80));
+function assignedFor(m){const pl=S.cfg.machines?.[m]?.p;if(pl&&pl.length)return pl.map(x=>({part:x,name:''}));const sh=shiftOfNow().shift,A=S.cfg.assign||{};return A[sh]?.map?.[m]||A[sh==='D'?'N':'D']?.map?.[m]||[]}
 function modelPicker(m,sel){
  const as=assignedFor(m),seen=new Set();let h='';sel=sel||as[0]?.part||'';
- as.forEach(x=>{seen.add(x.part);h+=`<option value="${esc(x.part)}" ${x.part===sel?'selected':''}>${esc(x.part)} – ${esc(x.name)}</option>`});
+ as.forEach(x=>{seen.add(x.part);h+=`<option value="${esc(x.part)}" ${x.part===sel?'selected':''}>${esc(x.part)}${x.name?' – '+esc(x.name):''}</option>`});
  S.cfg.models.forEach(x=>{if(x.tools.length&&!seen.has(x.name)){seen.add(x.name);h+=`<option value="${esc(x.name)}" ${x.name===sel?'selected':''}>${esc(x.name)}</option>`}});
  if(sel&&!seen.has(sel))h+=`<option value="${esc(sel)}" selected>${esc(sel)}</option>`;
- return`<label class="fld">Model / mã hàng${as.length?' (theo MES)':''}<select id="mm">${h}<option value="__other">Khác (nhập tay)…</option></select></label><input id="mo" placeholder="Mã hàng / model" maxlength="60" style="display:none;margin-top:6px">`}
+ return`<label class="fld">Model / mã hàng${as.length?' (theo danh mục máy / MES)':''}<select id="mm">${h}<option value="__other">Khác (nhập tay)…</option></select></label><input id="mo" placeholder="Mã hàng / model" maxlength="60" style="display:none;margin-top:6px">`}
 function bindPicker(){$('#mm').onchange=()=>{$('#mo').style.display=$('#mm').value==='__other'?'block':'none'}}
 const readModel=()=>{const v=$('#mm').value;return v==='__other'?($('#mo').value||'').trim():v};
 const stOf=m=>S.state[m]?.status||'IDLE';
@@ -502,20 +505,26 @@ function stopAllModal(arg){
    toast('Đã dừng '+n+' máy.');if(arg){S.selMode=false;S.selected.clear()}closeModal();rr()}catch(e){$('#er').textContent='Lỗi: '+(e.message||e.code||e)+' (đã ghi '+n+' máy)';$('#mok').disabled=false}}}
 
 function runAllModal(arg){
- const ms=arg||viewMachines(),stopped=ms.filter(m=>stOf(m)==='STOP'),idle=ms.filter(m=>stOf(m)==='IDLE');
- if(!stopped.length&&!idle.length){toast('Không có máy nào cần chạy trong nhóm này.');return}
+ const ms=arg||viewMachines(),isBrk=m=>stOf(m)==='STOP'&&S.state[m]?.reason==='ST02',broken=ms.filter(isBrk),stopped=ms.filter(m=>stOf(m)==='STOP'&&!isBrk(m)),idle=ms.filter(m=>stOf(m)==='IDLE');
+ if(!stopped.length&&!idle.length){toast(broken.length?broken.length+' máy đang hỏng, không chạy bằng lệnh chọn tất cả. Mở từng máy, tích xác nhận đã sửa xong rồi RUN.':'Không có máy nào cần chạy trong nhóm này.');return}
  const cur=shiftOfNow(),[ws]=win(cur.date,cur.shift),now=new Date();
  const opts=S.cfg.models.map(x=>`<option>${esc(x.name)}</option>`).join('');
  openModal(`<h3>RUN tất cả</h3>
+ ${broken.length?`<div class="err" style="margin-bottom:8px"><b>${broken.length} máy hỏng không chạy theo lệnh này:</b> ${esc(broken.map(dispName).join(', '))}. Mở từng máy, tích xác nhận đã sửa xong rồi RUN.</div>`:''}
  ${stopped.length?`<div class="mute"><b>${stopped.length} máy đang dừng</b> sẽ chạy lại: ${esc(stopped.join(', '))}</div>
  <label class="fld">Giờ chạy lại<input id="tm" type="time" value="${pad(now.getHours())}:${pad(now.getMinutes())}"></label>
  <label class="fld">Ghi chú nếu sửa giờ<input id="nt" maxlength="200"></label>`:''}
- ${idle.length?`<div class="mute" style="margin-top:12px"><b>${idle.length} máy chưa chạy</b> sẽ bắt đầu: ${esc(idle.join(', '))}</div>
- <label class="fld">Model chung cho máy không có dữ liệu MES (máy có MES lấy theo MES)<select id="mm"><option value="">—</option>${opts}</select></label>
+ ${idle.length?`<div class="mute" style="margin-top:12px" id="idlst"></div>
+ <label class="fld">Model chung cho máy chưa có sản phẩm (để trống = bỏ qua các máy đó, chỉ chạy máy đã có sản phẩm)<select id="mm"><option value="">—</option>${opts}</select></label>
  <label class="fld">Giờ bắt đầu (mặc định đầu ca)<input id="ts" type="time" value="${fmtTime(ws)}"></label>`:''}
  <div class="err" id="er"></div>
- <div class="row"><button class="btn" id="mc">Hủy</button><button class="btn run" id="mok">RUN ${stopped.length+idle.length} máy</button></div>`);
+ <div class="row"><button class="btn" id="mc">Hủy</button><button class="btn run" id="mok"></button></div>`);
  $('#mc').onclick=closeModal;
+ const readyL=()=>{const g=$('#mm')?$('#mm').value:'x';const ok=idle.filter(x=>assignedFor(x)[0]||g),skip=idle.filter(x=>!(assignedFor(x)[0]||g));return{ok,skip}};
+ const refresh=()=>{const{ok,skip}=readyL(),b=$('#idlst');
+  if(b)b.innerHTML=idle.length?`<b>${ok.length} máy chưa chạy</b> sẽ bắt đầu: ${esc(ok.map(dispName).join(', ')||'—')}`+(skip.length?`<br><b style="color:var(--bad,#c0392b)">${skip.length} máy chưa có sản phẩm, để lại không chạy:</b> ${esc(skip.map(dispName).join(', '))}`:''):'';
+  $('#mok').textContent='RUN '+(stopped.length+ok.length)+' máy';$('#mok').disabled=!(stopped.length+ok.length)};
+ if($('#mm'))$('#mm').onchange=refresh;refresh();
  $('#mok').onclick=async()=>{
   const er=$('#er');er.textContent='';let tRun=0,edited=false;const nt=($('#nt')?.value||'').trim();
   if(stopped.length){
@@ -526,13 +535,13 @@ function runAllModal(arg){
    tRun=edited?t:n}
   let tSt=0,model='';
   if(idle.length){
-   model=$('#mm').value;const miss=idle.filter(x=>!assignedFor(x)[0]&&!model);if(miss.length){er.textContent='Chưa có model cho: '+miss.map(dispName).join(', ')+'. Chọn model chung.';return}
+   model=$('#mm').value;if(!stopped.length&&!readyL().ok.length){er.textContent='Chưa máy nào có sản phẩm. Chọn model chung hoặc gán sản phẩm trong danh mục máy.';return}
    const[h,mi]=$('#ts').value.split(':').map(Number),[y,mo,d]=cur.date.split('-').map(Number);let t=new Date(y,mo-1,d,h,mi).getTime();if(t<ws)t+=86400000;
    if(t>Date.now()+60000){er.textContent='Giờ bắt đầu không được ở tương lai.';return}tSt=t}
-  $('#mok').disabled=true;let n=0;const tot=stopped.length+idle.length;
+  const skipped=readyL().skip;$('#mok').disabled=true;let n=0;const tot=stopped.length+readyL().ok.length;
   try{for(const m of stopped){if(stOf(m)!=='STOP')continue;$('#mok').textContent='Đang ghi '+(++n)+'/'+tot;await doRun(m,tRun,edited,nt)}
-   for(const m of idle){if(stOf(m)!=='IDLE')continue;$('#mok').textContent='Đang ghi '+(++n)+'/'+tot;await doStart(m,assignedFor(m)[0]?.part||model,tSt)}
-   toast('Đã chạy '+n+' máy.');if(arg){S.selMode=false;S.selected.clear()}closeModal();rr()}catch(e){er.textContent='Lỗi: '+(e.message||e.code||e)+' (đã ghi '+n+' máy)';$('#mok').disabled=false}}}
+   for(const m of idle){if(stOf(m)!=='IDLE')continue;const md=assignedFor(m)[0]?.part||model;if(!md)continue;$('#mok').textContent='Đang ghi '+(++n)+'/'+tot;await doStart(m,md,tSt)}
+   toast('Đã chạy '+n+' máy.'+(skipped.length?' Để lại '+skipped.length+' máy chưa có sản phẩm: '+skipped.map(dispName).join(', '):''));if(arg){S.selMode=false;S.selected.clear()}closeModal();rr()}catch(e){er.textContent='Lỗi: '+(e.message||e.code||e)+' (đã ghi '+n+' máy)';$('#mok').disabled=false}}}
 
 function tileModal(m){
  const st=S.state[m]||{status:'IDLE'};
@@ -652,8 +661,8 @@ function renderSettings(){
  <textarea id="cg">${esc(g)}</textarea>
  <h3 style="margin-top:14px">Model và dao</h3><p class="mute">Mỗi dòng: Mã hàng | Mã:Tên dao:Tuổi thọ chuẩn, … | số máy (chỉ để xem, tự tính theo MES) | Tên hàng. Ví dụ dao: T01:Dao phá:1500</p>
  <textarea id="cm">${esc(m)}</textarea>
- <h3 style="margin-top:14px">Danh mục máy (loại, nhóm kỹ thuật, nhóm sản lượng)</h3><p class="mute">Mỗi dòng: Mã máy | Loại máy | Nhóm kỹ thuật | Nhóm sản lượng | OP1. Ghi <b>x</b> ở cột OP1 nếu máy chạy OP1 (không nhập sản lượng), để trống nếu không. Dán thẳng nhiều dòng từ Excel được (dấu | hoặc Tab). Hiện ${(S.cfg.op1||[]).length} máy OP1.</p>
- <textarea id="cmm" style="min-height:160px">${esc(Object.keys(S.cfg.machines||{}).sort().map(k=>`${k} | ${S.cfg.machines[k].t} | ${S.cfg.machines[k].k||''} | ${S.cfg.machines[k].s||''} | ${(S.cfg.op1||[]).includes(k)?'x':''}`).join('\n'))}</textarea>
+ <h3 style="margin-top:14px">Danh mục máy (loại, nhóm kỹ thuật, nhóm sản lượng)</h3><p class="mute">Mỗi dòng: Mã máy | Loại máy | Nhóm kỹ thuật | Nhóm sản lượng | OP1 | Sản phẩm. Cột <b>Sản phẩm</b>: model máy đang chạy, hiện sẵn trong danh sách khi bấm RUN; nhiều sản phẩm thì cách nhau dấu <b>;</b>. Ghi <b>x</b> ở cột OP1 nếu máy chạy OP1 (không nhập sản lượng), để trống nếu không. Dán thẳng nhiều dòng từ Excel được (dấu | hoặc Tab). Hiện ${(S.cfg.op1||[]).length} máy OP1.</p>
+ <textarea id="cmm" style="min-height:160px">${esc(Object.keys(S.cfg.machines||{}).sort().map(k=>`${k} | ${S.cfg.machines[k].t} | ${S.cfg.machines[k].k||''} | ${S.cfg.machines[k].s||''} | ${(S.cfg.op1||[]).includes(k)?'x':''} | ${(S.cfg.machines[k].p||[]).join('; ')}`).join('\n'))}</textarea>
  <div class="err" id="er"></div>
  <div class="row"><button class="btn primary" data-a="savecfg">Lưu cài đặt</button></div></div>${mcCard()}${memberCard()}${mesCard()}${tplCard()}`}
 
@@ -673,7 +682,7 @@ async function saveCfg(){
   const machines={},op1=[];
   $('#cmm').value.split('\n').map(x=>x.trim()).filter(Boolean).forEach(l=>{const p=l.split(/\s*\|\s*|\t/).map(x=>x.trim());
    if(p.length<2||!/^[A-Za-z0-9_\-]+$/.test(p[0]))throw new Error('Dòng danh mục máy sai (Mã máy | Loại | Kỹ thuật | Sản lượng | OP1): '+l);
-   machines[p[0]]={t:p[1],k:p[2]||'',s:p[3]||''};if(/^(x|1|true|op1)$/i.test(p[4]||''))op1.push(p[0])});
+   machines[p[0]]={t:p[1],k:p[2]||'',s:p[3]||''};const pr=prodList(p.slice(5).join(' | '));if(pr.length)machines[p[0]].p=pr;if(/^(x|1|true|op1)$/i.test(p[4]||''))op1.push(p[0])});
   (S.cfg.op1||[]).forEach(m=>{if(!machines[m]&&!op1.includes(m))op1.push(m)});
   const keys=new Set([...groups.map(g=>g.dept+'|'+g.name),'KHO|Thủ kho']),members=Object.fromEntries(Object.entries(S.cfg.members||{}).filter(([k])=>keys.has(k)));
   await db.doc('config/main').set({groups,models,members,op1,assign:S.cfg.assign||{},machines});toast('Đã lưu cài đặt.')
@@ -1003,7 +1012,7 @@ const deptOf=v=>{v=String(v||'').trim().toLowerCase();return v==='sl'||v==='sả
 function mcDownload(){
  const cfg=S.cfg,gn=(dept,m)=>(cfg.groups.find(g=>(g.dept||'SL')===dept&&(g.machines||[]).includes(m))||{}).name||'';
  const op=new Set(cfg.op1||[]);
- const may=[['Mã máy','Loại máy','Nhóm kỹ thuật','Nhóm sản lượng','OP1 (x)']].concat(Object.keys(cfg.machines||{}).sort(natural).map(m=>{const o=cfg.machines[m];return[m,o.t||'',o.k||gn('KT',m),o.s||gn('SL',m),op.has(m)?'x':'']}));
+ const may=[['Mã máy','Loại máy','Nhóm kỹ thuật','Nhóm sản lượng','OP1 (x)','Sản phẩm (Book1)']].concat(Object.keys(cfg.machines||{}).sort(natural).map(m=>{const o=cfg.machines[m];return[m,o.t||'',o.k||gn('KT',m),o.s||gn('SL',m),op.has(m)?'x':'',(o.p||[]).join('; ')]}));
  const pt=[['Bộ phận (SL/KT)','Tên nhóm','Người phụ trách']].concat(cfg.groups.map(g=>[g.dept||'SL',g.name,g.manager||'']));
  const md=[['Mã hàng (model)','Mã dao','Tên dao','Tuổi thọ chuẩn (pcs)','Tên hàng']];
  (cfg.models||[]).forEach(m=>{if(!(m.tools||[]).length)md.push([m.name,'','','',m.title||'']);(m.tools||[]).forEach(t=>md.push([m.name,t.code,t.name||'',t.life,m.title||'']))});
@@ -1017,7 +1026,7 @@ function parseCatalog(wb){
   else if(!wb2.Sheets.Model_Dao&&hdr(ws,'Mã hàng (model)')){wb2.Sheets.Model_Dao=ws;names.md=n}
   else if(!names.pt&&hdr(ws,'Tên nhóm')){names.pt=n}});
  const res=parseTemplate(wb2);res.managers=[];res.hasOp1=false;res.names=names;
- if(names.may){const h=hdr(wb2.Sheets.DM_May,'Mã máy');res.hasOp1=h.includes('OP1 (x)')}
+ if(names.may){const h=hdr(wb2.Sheets.DM_May,'Mã máy');res.hasOp1=h.includes('OP1 (x)');res.hasProd=h.includes('Sản phẩm (Book1)')}
  if(names.pt){const A=XLSX.utils.sheet_to_json(wb.Sheets[names.pt],{header:1,defval:''});const hi=A.findIndex(r=>r.some(x=>T(x)==='Tên nhóm'));const H=A[hi].map(T);
   const ci=H.findIndex(x=>/^Bộ phận/.test(x)),cn=H.indexOf('Tên nhóm'),cm=H.findIndex(x=>/^Người phụ trách/.test(x));
   if(cm<0)res.errs.push('PhuTrach: thiếu cột "Người phụ trách"');
@@ -1034,7 +1043,7 @@ function catalogGroups(res){
  return gs}
 async function applyCatalog(res){
  const upd={},cfg=S.cfg;
- if(Object.keys(res.machines).length){upd.machines={...(cfg.machines||{}),...res.machines};
+ if(Object.keys(res.machines).length){if(!res.hasProd)Object.keys(res.machines).forEach(m=>{const o=(cfg.machines||{})[m];if(o?.p?.length)res.machines[m].p=o.p});upd.machines={...(cfg.machines||{}),...res.machines};
   if(res.hasOp1){const inFile=new Set(Object.keys(res.machines));upd.op1=[...new Set([...(cfg.op1||[]).filter(m=>!inFile.has(m)),...res.op1])]}}
  if(Object.keys(res.machines).length||res.managers.length)upd.groups=catalogGroups(res);
  if(Object.keys(res.models).length){const ms=JSON.parse(JSON.stringify(cfg.models||[]));
@@ -1047,11 +1056,11 @@ document.addEventListener('change',async e=>{
  try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),res=parseCatalog(wb);window._mc=res;const cfg=S.cfg,L=[];
   const gOf=(d,m)=>((cfg.groups||[]).find(g=>(g.dept||'SL')===d&&(g.machines||[]).includes(m))||{}).name||'';
   const ms=Object.keys(res.machines);
-  if(ms.length){const nw=ms.filter(m=>!(cfg.machines||{})[m]),ch=ms.filter(m=>{const o=(cfg.machines||{})[m];return o&&(o.t!==res.machines[m].t||o.k!==res.machines[m].k||o.s!==res.machines[m].s)});
+  if(ms.length){const nw=ms.filter(m=>!(cfg.machines||{})[m]),ch=ms.filter(m=>{const o=(cfg.machines||{})[m];return o&&(o.t!==res.machines[m].t||o.k!==res.machines[m].k||o.s!==res.machines[m].s||(res.hasProd&&JSON.stringify(o.p||[])!==JSON.stringify(res.machines[m].p||[])))});
    const mv=ms.filter(m=>[['KT','k'],['SL','s']].some(([d,k])=>{const n=(res.machines[m][k]||'').trim();return n&&gOf(d,m)&&gOf(d,m)!==n}));
    L.push('Máy trong file: '+ms.length+' ('+nw.length+' mới, '+ch.length+' đổi thông tin, '+mv.length+' chuyển nhóm)'+(mv.length?': '+mv.slice(0,8).join(', ')+(mv.length>8?'…':''):''));
    const keep=Object.keys(cfg.machines||{}).filter(m=>!res.machines[m]).length;if(keep)L.push('Giữ nguyên '+keep+' máy không có trong file');
-   if(res.hasOp1)L.push('Máy OP1 trong file: '+res.op1.length)}
+   if(res.hasOp1)L.push('Máy OP1 trong file: '+res.op1.length);if(res.hasProd)L.push('Máy có sản phẩm: '+ms.filter(m=>(res.machines[m].p||[]).length).length+'/'+ms.length)}
   res.managers.forEach(x=>{const g=(cfg.groups||[]).find(y=>(y.dept||'SL')===x.dept&&y.name===x.name);if(!g)L.push('Nhóm mới: '+x.dept+' '+x.name+(x.manager?' - '+x.manager:''));else if((g.manager||'')!==x.manager)L.push(x.dept+' '+x.name+': '+(g.manager||'(trống)')+' → '+(x.manager||'(trống)'))});
   const mo=Object.keys(res.models);if(mo.length){const nw=mo.filter(n=>!(cfg.models||[]).some(m=>m.name===n)),ch=mo.filter(n=>{const m=(cfg.models||[]).find(x=>x.name===n);return m&&JSON.stringify(m.tools)!==JSON.stringify(res.models[n].tools)});L.push('Model: '+mo.length+' ('+nw.length+' mới, '+ch.length+' đổi dao)')}
   out.innerHTML=(L.map(x=>'<div>'+esc(x)+'</div>').join('')||'<div class="mute">Không có thay đổi nào.</div>')+(res.errs.length?`<div class="err">Có ${res.errs.length} lỗi, sửa file rồi chọn lại:<br>${res.errs.slice(0,10).map(esc).join('<br>')}</div>`:(L.length?'<div class="row"><button class="btn primary" data-a="mcapply">Áp dụng cập nhật</button></div>':''))
@@ -1092,7 +1101,7 @@ function parseTemplate(wb){
   if(o.tools.some(x=>x.code===dc))return E(at+'dao '+dc+' bị trùng trong model '+m);o.tools.push({code:dc,name:T(r['Tên dao']),life})})}
  const mm=sh('DM_May','Mã máy');
  if(mm){res.has.mm=1;mm.forEach(r=>{const m=T(r['Mã máy']);if(!m)return;if(!/^[A-Za-z0-9_\-]+$/.test(m))return E('DM_May dòng '+r.__row+': mã máy chỉ gồm chữ, số, - _ ('+m+')');
-  res.machines[m]={t:T(r['Loại máy']),k:T(r['Nhóm kỹ thuật']),s:T(r['Nhóm sản lượng'])};if(/^(x|1|true)$/i.test(T(r['OP1 (x)'])))res.op1.push(m)})}
+  res.machines[m]={t:T(r['Loại máy']),k:T(r['Nhóm kỹ thuật']),s:T(r['Nhóm sản lượng'])};const pr=prodList(r['Sản phẩm (Book1)']);if(pr.length)res.machines[m].p=pr;if('Sản phẩm (Book1)' in r)res.hasProd=true;if(/^(x|1|true)$/i.test(T(r['OP1 (x)'])))res.op1.push(m)})}
  return res}
 async function applyTemplate(res,prog){
  let n=0;const list=[];
@@ -1104,7 +1113,7 @@ async function applyTemplate(res,prog){
  const upd={};
  if(res.has.md&&Object.keys(res.models).length){const ms=JSON.parse(JSON.stringify(S.cfg.models||[]));
   Object.entries(res.models).forEach(([name,o])=>{const i=ms.findIndex(m=>m.name===name);if(i>=0){ms[i].tools=o.tools;if(o.title)ms[i].title=o.title}else ms.push({name,tools:o.tools,title:o.title})});upd.models=ms}
- if(res.has.mm&&Object.keys(res.machines).length){upd.machines=res.machines;upd.op1=res.op1;
+ if(res.has.mm&&Object.keys(res.machines).length){if(!res.hasProd)Object.keys(res.machines).forEach(m=>{const o=S.cfg.machines?.[m];if(o?.p?.length)res.machines[m].p=o.p});upd.machines=res.machines;upd.op1=res.op1;
   const gs=JSON.parse(JSON.stringify(S.cfg.groups||[]));
   [['KT','k'],['SL','s']].forEach(([dept,f])=>{const by={};Object.entries(res.machines).forEach(([m,o])=>{const nm=(o[f]||'').trim();if(nm)(by[nm]=by[nm]||[]).push(m)});
    Object.entries(by).forEach(([nm,ms])=>{let g=gs.find(x=>(x.dept||'SL')===dept&&x.name===nm);if(!g){let n=gs.length+1;while(gs.some(x=>x.id==='g'+n))n++;g={id:'g'+n,dept,name:nm,manager:'',machines:[]};gs.push(g)}
