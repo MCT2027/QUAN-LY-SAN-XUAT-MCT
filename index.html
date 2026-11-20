@@ -188,7 +188,7 @@ details.kd>summary::-webkit-details-marker{display:none}details.kd[open]>summary
 <main id="view"><p class="mute">Đang tải…</p></main>
 <div id="modal"><div id="mbox"></div></div>
 
-<script src="https://script.google.com/macros/s/AKfycbwRq5FHMekIKYgyfCGmQJ9Ap2VfbXn_vI6XQ8d5-xC5rqPEqru_oKoBqmZvCT6SKSezVg/exec"></script>
+<script src="https://script.google.com/macros/s/AKfycbxYx-k_21uix6zZPy-gmdNRodOUNYvNSuBsyvTuc1ALmlWnviqfzMe1ckdJImNWQcdwgQ/exec"></script>
 <script>
 const REASONS=[
  {code:'ST01',name:'Thay dao'},{code:'ST02',name:'Máy hỏng'},{code:'ST03',name:'Sửa kích thước'},
@@ -1071,11 +1071,11 @@ setInterval(()=>{if(S.tab==='work')rr()},120000);
 
 
 /* ---------- máy chủ Google Sheets (không cần tài khoản claude) ---------- */
-function remoteDb(api,code,me,users,boot){
+function remoteDb(api,cred,me,users){
  const mem={};let ver=0,pending=0,busy=false;const subs=[];
  const clone=o=>JSON.parse(JSON.stringify(o));
  const mergeO=(a,b)=>{const o=Object.assign({},a);for(const k in b){const v=b[k];o[k]=(v&&typeof v==='object'&&!Array.isArray(v)&&o[k]&&typeof o[k]==='object'&&!Array.isArray(o[k]))?mergeO(o[k],v):v}return o};
- const call=async body=>{let r;try{r=await fetch(api,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({code},body))})}catch(e){throw Object.assign(new Error('Không kết nối được máy chủ'),{code:'network'})}
+ const call=async body=>{let r;try{r=await fetch(api,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({id:cred.id,pw:cred.pw},body))})}catch(e){throw Object.assign(new Error('Không kết nối được máy chủ'),{code:'network'})}
   let j;try{j=await r.json()}catch(e){throw Object.assign(new Error('Máy chủ trả lời sai'),{code:'bad_response'})}
   if(!j.ok)throw Object.assign(new Error(j.err||'server'),{code:j.err||'server'});return j};
  const notify=()=>subs.slice().forEach(f=>f());
@@ -1104,24 +1104,24 @@ function remoteDb(api,code,me,users,boot){
   setInterval(()=>{if(document.visibilityState!=='hidden')sync(false).catch(()=>{})},20000);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')sync(false).catch(()=>{})})}
  return{db:{doc,collection:coll},user,sync,role:me.role}}
-async function remoteLogin(api,code){
- const r=await fetch(api,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({a:'login',code})});
+async function remoteLogin(api,id,pw){
+ const r=await fetch(api,{method:'POST',redirect:'follow',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({a:'login',id,pw})});
  const j=await r.json();if(!j.ok)throw Object.assign(new Error(j.err),{code:j.err});
- const R=remoteDb(api,code,j.user,j.users);await R.sync(true);R.me=j.user;return R}
+ const R=remoteDb(api,{id,pw},j.user,j.users);await R.sync(true);R.me=j.user;return R}
 function loginOverlay(msg,needApi,defApi){
  return new Promise(res=>{
   const o=document.createElement('div');o.style.cssText='position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
-  o.innerHTML='<div class="card" style="max-width:420px;width:100%"><h3 style="margin:0 0 6px">Đăng nhập</h3><div class="mute" id="lgm" style="margin-bottom:8px"></div>'+(needApi?'<input id="lgapi" placeholder="Địa chỉ máy chủ (link Apps Script)" style="width:100%;margin-bottom:8px">':'')+'<input id="lgcode" type="password" placeholder="Mã đăng nhập" autocomplete="off" style="width:100%"><div class="row" style="margin-top:10px"><button class="btn primary" id="lgok">Vào</button><button class="btn" id="lgloc">Dùng thử trên máy này</button></div></div>';
-  document.body.appendChild(o);o.querySelector('#lgm').textContent=msg||'Nhập mã được cấp.';
+  o.innerHTML='<div class="card" style="max-width:420px;width:100%"><h3 style="margin:0 0 6px">Đăng nhập</h3><div class="mute" id="lgm" style="margin-bottom:8px"></div>'+(needApi?'<input id="lgapi" placeholder="Địa chỉ máy chủ (link Apps Script)" style="width:100%;margin-bottom:8px">':'')+'<input id="lgid" placeholder="Mã nhân viên" autocomplete="username" style="width:100%;margin-bottom:8px"><input id="lgpw" type="password" placeholder="Mật khẩu" autocomplete="current-password" style="width:100%"><div class="row" style="margin-top:10px"><button class="btn primary" id="lgok">Vào</button><button class="btn" id="lgloc">Dùng thử trên máy này</button></div></div>';
+  document.body.appendChild(o);o.querySelector('#lgm').textContent=msg||'Nhập mã nhân viên và mật khẩu được cấp.';
   if(needApi&&defApi)o.querySelector('#lgapi').value=defApi;
-  o.querySelector('#lgok').onclick=()=>{const api=needApi?o.querySelector('#lgapi').value.trim():defApi,code=o.querySelector('#lgcode').value.trim();if(!api||!code){o.querySelector('#lgm').textContent='Nhập đủ thông tin.';return}o.remove();res({api,code})};
+  o.querySelector('#lgok').onclick=()=>{const api=needApi?o.querySelector('#lgapi').value.trim():defApi,id=o.querySelector('#lgid').value.trim(),pw=o.querySelector('#lgpw').value.trim();if(!api||!id||!pw){o.querySelector('#lgm').textContent='Nhập đủ thông tin.';return}o.remove();res({api,id,pw})};
   o.querySelector('#lgloc').onclick=()=>{o.remove();res(null)}})}
 async function connectRemote(){
- const fixed=(typeof window!=='undefined'&&window.MCT_API)||'';let api=fixed||load('mct_api')||'',code=load('mct_code')||'',msg='';
+ const fixed=(typeof window!=='undefined'&&window.MCT_API)||'';let api=fixed||load('mct_api')||'',uid0=load('mct_id')||'',pw0=load('mct_pw')||'',msg='';
  if(!fixed&&!api&&typeof claude!=='undefined'&&!window.MCT_FORCE_LOGIN)return null;
  for(let t=0;t<6;t++){
-  if(api&&code){try{const R=await remoteLogin(api,code);store('mct_api',api);store('mct_code',code);return R}catch(e){msg=e.code==='bad_code'?'Mã không đúng.':e.code==='locked'?'Nhập sai quá nhiều lần, thử lại sau 10 phút.':'Không kết nối được máy chủ ('+(e.message||e.code)+').';if(e.code==='bad_code'||e.code==='locked')store('mct_code','')}}
-  const a=await loginOverlay(msg,!fixed,api);if(!a)return null;api=a.api;code=a.code}
+  if(api&&uid0&&pw0){try{const R=await remoteLogin(api,uid0,pw0);store('mct_api',api);store('mct_id',uid0);store('mct_pw',pw0);return R}catch(e){msg=e.code==='bad_code'?'Mã nhân viên hoặc mật khẩu không đúng.':e.code==='locked'?'Nhập sai quá nhiều lần, thử lại sau 10 phút.':'Không kết nối được máy chủ ('+(e.message||e.code)+').';if(e.code==='bad_code'||e.code==='locked'){store('mct_pw','');pw0=''}}}
+  const a=await loginOverlay(msg,!fixed,api);if(!a)return null;api=a.api;uid0=a.id;pw0=a.pw}
  return null}
 function localDb(){
  const KEY='mct_localdb_v1';let mem={};
