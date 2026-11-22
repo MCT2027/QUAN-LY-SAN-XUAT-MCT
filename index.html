@@ -270,6 +270,20 @@ async function doRun(m,endTs,edited,note){
  if(s){s.end=endTs;if(edited)s.edit={by:who(),at:Date.now(),note:note||''};await ref.set(d)}
  await db.doc('state/'+m).set({machine:m,status:'RUN',model:st.model,since:endTs,openStop:null,by:who()})}
 
+/* ghi hàng loạt: gom mọi thao tác vào ít lượt gửi nhất (36 thao tác/lượt) thay vì chờ từng máy */
+async function bulkOps(ops){if(!ops.length)return;
+ if(typeof db.batch==='function'){for(let i=0;i<ops.length;i+=36)await db.batch(ops.slice(i,i+36))}
+ else for(const o of ops)await db.doc(o.path).set(o.data)}
+async function opsStart(m,model,t){const date=fmtDate(new Date(t)),{d}=await getLog(m,date);
+ d.models.push({t,from:S.state[m]?.model||'',to:model,start:true,by:who()});
+ return[{op:'set',path:'logs/'+m+'_'+date,data:d},{op:'set',path:'state/'+m,data:{machine:m,status:'RUN',model,since:t,openStop:null,by:who()}}]}
+async function opsRun(m,endTs,edited,note){const st=S.state[m],ops=[],{d}=await getLog(m,st.openStop.date),s=d.stops.find(x=>x.id===st.openStop.id);
+ if(s){s.end=endTs;if(edited)s.edit={by:who(),at:Date.now(),note:note||''};ops.push({op:'set',path:'logs/'+m+'_'+st.openStop.date,data:d})}
+ ops.push({op:'set',path:'state/'+m,data:{machine:m,status:'RUN',model:st.model,since:endTs,openStop:null,by:who()}});return ops}
+async function opsStop(m,p){const now=Date.now(),date=fmtDate(new Date(now)),{d}=await getLog(m,date),id=uid();
+ d.stops.push({id,reason:p.reason,start:now,end:null,note:p.note||'',tool:null,model:S.state[m]?.model||'',by:who()});
+ return[{op:'set',path:'logs/'+m+'_'+date,data:d},{op:'set',path:'state/'+m,data:{machine:m,status:'STOP',model:S.state[m]?.model||'',since:now,reason:p.reason,openStop:{date,id},by:who()}}]}
+
 /* ---------- modal ---------- */
 const modal=$('#modal'),mbox=$('#mbox');
 function openModal(h){mbox.innerHTML=h;modal.classList.add('on')}
@@ -507,7 +521,8 @@ function stopAllModal(arg){
  $('#mok').onclick=async()=>{
   const nt=$('#nt').value.trim();if(sel==='ST06'&&!nt){$('#er').textContent='Dừng khác phải ghi chú lý do.';return}
   $('#mok').disabled=true;let n=0;
-  try{for(const m of list){if(stOf(m)!=='RUN')continue;$('#mok').textContent='Đang ghi '+(++n)+'/'+list.length;await doStop(m,{reason:sel,note:nt,tool:null})}
+  try{const ops=[];$('#mok').textContent='Đang ghi '+list.length+' máy…';for(const m of list){if(stOf(m)!=='RUN')continue;ops.push(...await opsStop(m,{reason:sel,note:nt}));n++}
+   await bulkOps(ops)
    toast('Đã dừng '+n+' máy.');if(arg){S.selMode=false;S.selected.clear()}closeModal();rr()}catch(e){$('#er').textContent='Lỗi: '+(e.message||e.code||e)+' (đã ghi '+n+' máy)';$('#mok').disabled=false}}}
 
 function runAllModal(arg){
@@ -517,8 +532,10 @@ function runAllModal(arg){
  if(idle.every(m=>assignedFor(m)[0])){
   if(S.runBusy)return;S.runBusy=true;let n=0;const t0=Date.now();
   (async()=>{try{
-   for(const m of stopped){if(stOf(m)!=='STOP')continue;await doRun(m,t0,false,'');n++}
-   for(const m of idle){if(stOf(m)!=='IDLE')continue;await doStart(m,assignedFor(m)[0].part,ws);n++}
+   const ops=[];
+   for(const m of stopped){if(stOf(m)!=='STOP')continue;ops.push(...await opsRun(m,t0,false,''));n++}
+   for(const m of idle){if(stOf(m)!=='IDLE')continue;ops.push(...await opsStart(m,assignedFor(m)[0].part,ws));n++}
+   await bulkOps(ops)
    toast('Đã chạy '+n+' máy theo model đã gán.'+(broken.length?' '+broken.length+' máy hỏng không chạy: '+broken.map(dispName).join(', '):''));
    if(arg){S.selMode=false;S.selected.clear()}rr()}
   catch(e){toast('Lỗi: '+(e.message||e.code||e)+' (đã ghi '+n+' máy)');rr()}
@@ -562,8 +579,10 @@ function runAllModal(arg){
    const[h,mi]=$('#ts').value.split(':').map(Number),[y,mo,d]=cur.date.split('-').map(Number);let t=new Date(y,mo-1,d,h,mi).getTime();if(t<ws)t+=86400000;
    if(t>Date.now()+60000){er.textContent='Giờ bắt đầu không được ở tương lai.';return}tSt=t}
   const skipped=readyL().skip,pmv=pm();$('#mok').disabled=true;let n=0;const tot=stopped.length+readyL().ok.length;
-  try{for(const m of stopped){if(stOf(m)!=='STOP')continue;$('#mok').textContent='Đang ghi '+(++n)+'/'+tot;await doRun(m,tRun,edited,nt)}
-   for(const m of idle){if(stOf(m)!=='IDLE')continue;const md=pmv[m];if(!md)continue;$('#mok').textContent='Đang ghi '+(++n)+'/'+tot;await doStart(m,md,tSt)}
+  try{const ops=[];$('#mok').textContent='Đang ghi '+tot+' máy…';
+   for(const m of stopped){if(stOf(m)!=='STOP')continue;ops.push(...await opsRun(m,tRun,edited,nt));n++}
+   for(const m of idle){if(stOf(m)!=='IDLE')continue;const md=pmv[m];if(!md)continue;ops.push(...await opsStart(m,md,tSt));n++}
+   await bulkOps(ops)
    toast('Đã chạy '+n+' máy.'+(skipped.length?' Để lại '+skipped.length+' máy chưa chọn model: '+skipped.map(dispName).join(', '):''));if(arg){S.selMode=false;S.selected.clear()}closeModal();rr()}catch(e){er.textContent='Lỗi: '+(e.message||e.code||e)+' (đã ghi '+n+' máy)';$('#mok').disabled=false}}}
 
 function tileModal(m){
