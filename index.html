@@ -781,7 +781,7 @@ function renderInv(){
  ({stock:invStock,req:invReq,out:invOut,use:invUse,hist:invHist,in:invIn,cat:invCat,gauge:invGauge}[S.kho]||invStock)()+bar}
 /* ---------- Dụng cụ đo / kiểm (pin gauge, dưỡng…) ---------- */
 S.gauges={};S.gq='';S.gf='ALL';
-const GST={USE:'Đang dùng',REPAIR:'Đang sửa',SCRAP:'Loại bỏ'};
+const GST={USE:'Đang dùng',REPAIR:'Đang sửa',NOUSE:'Không sử dụng',SCRAP:'Loại bỏ'};S.gk='ALL';const GKIND={PIN:'Pin',JIG:'Jig',DEVICE:'Thiết bị đo'};
 S.glog=[];S._gh={};
 const gHold=id=>(S._gh||{})[id]||null;
 const canEditG=g=>isKeeper()||!!(g&&g.ownerId&&myId&&g.ownerId===myId);
@@ -792,7 +792,7 @@ const todayStr=()=>fmtDate(new Date());
 const dayNum=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s||''));return m?Math.round(Date.UTC(+m[1],+m[2]-1,+m[3])/864e5):null};
 const addDays=(s,n)=>{const d=new Date((dayNum(s)+n)*864e5);return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate())};
 const gDays=g=>{const d=dayNum(g.dueAt);return d==null?null:d-dayNum(todayStr())};
-const gState=g=>{if(g.status==='SCRAP')return'SCRAP';if(g.status==='REPAIR')return'REPAIR';const n=gDays(g);return n==null?'NODATE':n<0?'OVER':n<=7?'SOON':'OK'};
+const gState=g=>{if(g.status==='SCRAP')return'SCRAP';if(g.status==='NOUSE')return'NOUSE';if(g.status==='REPAIR')return'REPAIR';const n=gDays(g);return n==null?'NODATE':n<0?'OVER':n<=7?'SOON':'OK'};
 function parseDateIn(v){v=String(v==null?'':v).trim();if(!v)return'';let m;
  if(m=/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/.exec(v))return m[1]+'-'+pad(+m[2])+'-'+pad(+m[3]);
  if(m=/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/.exec(v))return m[3]+'-'+pad(+m[2])+'-'+pad(+m[1]);
@@ -802,19 +802,19 @@ const gNum=v=>{const x=parseFloat(String(v==null?'':v).replace(',','.'));return 
 const gSpec=g=>{const a=gNum(g.go),b=gNum(g.no),lo=gNum(g.min),hi=gNum(g.max);if(a==null||b==null||lo==null||hi==null)return null;return lo>=a-1e-9&&hi<=b+1e-9};
 const gv=v=>v===undefined||v===null||v===''?'–':esc(v);
 function gTag(g){const st=gState(g),n=gDays(g);
- return st==='OVER'?`<span class="tag STOP">Quá ${-n} ngày</span>`:st==='SOON'?`<span class="tag warn">Còn ${n} ngày</span>`:st==='OK'?`<span class="tag RUN">Còn ${n} ngày</span>`:st==='REPAIR'?'<span class="tag IDLE">Đang sửa</span>':st==='SCRAP'?'<span class="tag IDLE">Loại bỏ</span>':'<span class="tag IDLE">Chưa có hạn</span>'}
-function gCounts(){const c={all:0,over:0,soon:0,ok:0,bad:0};Object.values(S.gauges).forEach(g=>{const st=gState(g);if(st==='SCRAP'||st==='REPAIR'){c.bad++;return}c.all++;if(st==='OVER')c.over++;else if(st==='SOON')c.soon++;else if(st==='OK')c.ok++});return c}
+ return st==='OVER'?`<span class="tag STOP">Quá ${-n} ngày</span>`:st==='SOON'?`<span class="tag warn">Còn ${n} ngày</span>`:st==='OK'?`<span class="tag RUN">Còn ${n} ngày</span>`:st==='REPAIR'?'<span class="tag IDLE">Đang sửa</span>':st==='SCRAP'?'<span class="tag IDLE">Loại bỏ</span>':st==='NOUSE'?'<span class="tag IDLE">Không sử dụng</span>':'<span class="tag IDLE">Chưa có hạn</span>'}
+function gCounts(){const c={all:0,over:0,soon:0,ok:0,bad:0};Object.values(S.gauges).forEach(g=>{const st=gState(g);if(st==='SCRAP'||st==='REPAIR'||st==='NOUSE'){c.bad++;return}c.all++;if(st==='OVER')c.over++;else if(st==='SOON')c.soon++;else if(st==='OK')c.ok++});return c}
 function gHomeCard(){const c=gCounts(),n=Object.keys(S.gauges).length;
  return`<div class="card" style="grid-column:1/-1"><div class="mh"><b>📐 Dụng cụ đo / kiểm</b><button class="btn sm" data-a="kho" data-k="gauge">Mở</button></div>`+(n?`<div class="row" style="gap:10px;flex-wrap:wrap"><span class="tag ${c.over?'STOP':'RUN'}">${c.over} quá hạn hiệu chuẩn</span><span class="tag ${c.soon?'warn':'RUN'}">${c.soon} sắp đến hạn (≤7 ngày)</span><span class="mute">${c.all} đang dùng</span></div>`:'<p class="mute">Chưa có dụng cụ nào. Thủ kho thêm hoặc dán danh sách từ Excel.</p>')+'</div>'}
 function gRows(){const q=S.gq.trim().toLowerCase(),f=S.gf,list=Object.values(S.gauges).filter(g=>{const st=gState(g);
-  if(f==='OVER'&&st!=='OVER')return false;if(f==='SOON'&&st!=='SOON')return false;if(f==='BAD'&&st!=='REPAIR'&&st!=='SCRAP')return false;if(f==='LOAN'&&!gHold(g.id))return false;if(f==='MINE'&&!(myId&&g.ownerId===myId))return false;
-  return!q||[g.id,g.size,g.nom,g.model,g.machine,g.owner].join(' ').toLowerCase().includes(q)});
- const key=g=>{const n=gDays(g),st=gState(g);return(st==='SCRAP'||st==='REPAIR'?1e8:0)+(n==null?1e7:n)};
+  if(f==='OVER'&&st!=='OVER')return false;if(f==='SOON'&&st!=='SOON')return false;if(f==='BAD'&&st!=='REPAIR'&&st!=='SCRAP'&&st!=='NOUSE')return false;if(S.gk&&S.gk!=='ALL'&&(g.kind||'PIN')!==S.gk)return false;if(f==='LOAN'&&!gHold(g.id))return false;if(f==='MINE'&&!(myId&&g.ownerId===myId))return false;
+  return!q||[g.id,g.name,g.part,g.size,g.nom,g.model,g.machine,g.owner].join(' ').toLowerCase().includes(q)});
+ const key=g=>{const n=gDays(g),st=gState(g);return(st==='SCRAP'||st==='REPAIR'||st==='NOUSE'?1e8:0)+(n==null?1e7:n)};
  list.sort((a,b)=>key(a)-key(b)||natural(a.id,b.id));
- return list.slice(0,300).map(g=>`<div class="krow" data-a="gdetail" data-c="${esc(g.id)}" style="cursor:pointer"><div style="min-width:0"><b>${esc(g.id)}</b> <span class="mute">${esc(g.nom||'')}</span><div class="mute">${esc([g.model,g.machine&&dispName(g.machine),g.owner].filter(Boolean).join(' · '))}${gHold(g.id)?` · <b style="color:var(--warn,#b45309)">🔒 ${esc(gHold(g.id).to||gHold(g.id).by||'')}</b>`:''}</div></div><div style="text-align:right;flex:none">${gTag(g)}<div class="mute">${esc(g.dueAt||'')}</div></div></div>`).join('')||'<p class="mute">Không có dụng cụ nào.</p>'}
+ return list.slice(0,300).map(g=>`<div class="krow" data-a="gdetail" data-c="${esc(g.id)}" style="cursor:pointer"><div style="min-width:0"><b>${esc(g.id)}</b> <span class="mute">${esc(g.name&&g.kind==='DEVICE'?g.name:(g.nom||g.name||''))}</span><div class="mute">${esc([g.model,g.machine&&dispName(g.machine),g.owner].filter(Boolean).join(' · '))}${gHold(g.id)?` · <b style="color:var(--warn,#b45309)">🔒 ${esc(gHold(g.id).to||gHold(g.id).by||'')}</b>`:''}</div></div><div style="text-align:right;flex:none">${gTag(g)}<div class="mute">${esc(g.dueAt||'')}</div></div></div>`).join('')||'<p class="mute">Không có dụng cụ nào.</p>'}
 function invGauge(){const c=gCounts(),keeper=isKeeper();
  return`<div class="kpis"><div class="kpi"><div class="kl">Đang dùng</div><div class="kpv">${c.all}</div></div><div class="kpi"><div class="kl">Quá hạn</div><div class="kpv" style="color:${c.over?'var(--stop)':'inherit'}">${c.over}</div></div><div class="kpi"><div class="kl">Sắp hạn ≤7 ngày</div><div class="kpv" style="color:${c.soon?'var(--warn)':'inherit'}">${c.soon}</div></div></div>
- <div class="chips" style="padding:6px 0!important">${[['ALL','Tất cả'],['OVER','Quá hạn'],['SOON','Sắp hạn'],['LOAN','Đang mượn'],...(myId&&myId!=='local'?[['MINE','Của tôi']]:[]),['BAD','Sửa / loại bỏ']].map(([k,n])=>`<button class="chip ${S.gf===k?'on':''}" data-a="gf" data-k="${k}">${n}</button>`).join('')}</div>
+ ${Object.values(S.gauges).some(g=>g.kind&&g.kind!=='PIN')?`<div class="chips" style="padding:6px 0 0!important">${[['ALL','Mọi loại'],...Object.entries(GKIND)].map(([k,n])=>`<button class="chip ${S.gk===k?'on':''}" data-a="gk" data-k="${k}">${n}</button>`).join('')}</div>`:''}<div class="chips" style="padding:6px 0!important">${[['ALL','Tất cả'],['OVER','Quá hạn'],['SOON','Sắp hạn'],['LOAN','Đang mượn'],...(myId&&myId!=='local'?[['MINE','Của tôi']]:[]),['BAD','Sửa / loại bỏ']].map(([k,n])=>`<button class="chip ${S.gf===k?'on':''}" data-a="gf" data-k="${k}">${n}</button>`).join('')}</div>
  <input id="gsearch" placeholder="Tìm mã, model, máy, người quản lý…" value="${esc(S.gq)}" style="width:100%;margin-bottom:6px" autocomplete="off">
  <div class="row" style="margin:0 0 6px">${canWrite?'<button class="btn run" data-a="gscan">📷 Quét mượn / trả</button>':''}${canWrite&&!keeper?'<button class="btn primary" data-a="greq">📐 Yêu cầu lấy pin</button>':''}${keeper?'<button class="btn primary" data-a="gnew">+ Thêm dụng cụ</button>':''}</div>
  <div class="card" id="glist" style="padding:4px 8px">${gRows()}</div>
@@ -844,7 +844,7 @@ async function gImport(){const er=$('#gerr');er.textContent='';
  try{await bulkSet(list);$('#gimp').value='';toast('Đã nhập '+list.length+' dụng cụ'+(matched?', tự gán người quản lý cho '+matched+' mã':'')+'.')}catch(e){er.textContent='Lỗi ghi: '+(e.code||e.message||e)}}
 function gDetail(id){const g=S.gauges[id];if(!g)return;const sp=gSpec(g),hd=gHold(id);
  openModal(`<h3>${esc(g.id)} ${gTag(g)}</h3>
- <div class="kv"><span>Kích thước pin</span><b>${gv(g.size)}</b></div><div class="kv"><span>Spec</span><b>${gv(g.nom)} (${gv(g.lo)} / ${gv(g.hi)})</b></div>
+ ${g.name?`<div class="kv"><span>Tên</span><b>${gv(g.name)}</b></div>`:''}${g.part?`<div class="kv"><span>Sản phẩm (Model NO)</span><b>${gv(g.part)}</b></div>`:''}${g.serial?`<div class="kv"><span>Serial</span><b>${gv(g.serial)}</b></div>`:''}<div class="kv"><span>${g.kind==='DEVICE'?'Phạm vi đo':'Kích thước pin'}</span><b>${gv(g.size)}</b></div><div class="kv"><span>Spec</span><b>${gv(g.nom)} (${gv(g.lo)} / ${gv(g.hi)})</b></div>
  <div class="kv"><span>Go / No</span><b>${gv(g.go)} / ${gv(g.no)}</b></div><div class="kv"><span>Thực tế Min / Max</span><b>${gv(g.min)} / ${gv(g.max)}</b></div>
  ${sp===false?'<div class="err">Min/Max thực tế nằm ngoài khoảng Go–No. Kiểm tra lại số liệu hoặc dụng cụ.</div>':''}
  <div class="kv"><span>Người quản lý</span><b>${gv(g.owner)}</b></div><div class="kv"><span>Máy</span><b>${g.machine?esc(dispName(g.machine)):'–'}</b></div><div class="kv"><span>Model sử dụng</span><b>${gv(g.model)}</b></div>
@@ -903,7 +903,7 @@ function gEditModal(id){const g=id?S.gauges[id]:null,v=k=>esc(g?.[k]??'');
 
 
 const gl=r=>(r.gauges||[]).map(g=>`<div style="font-size:15px">📐 <b>${esc(g)}</b> <span class="mute">${esc((S.gauges[g]||{}).nom||'')}</span></div>`).join('');
-function gUsable(id){const g=S.gauges[id];if(!g)return'không có trong danh sách';const st=gState(g);if(st==='OVER')return'quá hạn hiệu chuẩn';if(st==='REPAIR')return'đang sửa';if(st==='SCRAP')return'đã loại bỏ';if(gHold(id))return'đang được '+(gHold(id).to||gHold(id).by||'người khác')+' mượn';return''}
+function gUsable(id){const g=S.gauges[id];if(!g)return'không có trong danh sách';const st=gState(g);if(st==='OVER')return'quá hạn hiệu chuẩn';if(st==='REPAIR')return'đang sửa';if(st==='NOUSE')return'đang để không sử dụng';if(st==='SCRAP')return'đã loại bỏ';if(gHold(id))return'đang được '+(gHold(id).to||gHold(id).by||'người khác')+' mượn';return''}
 function gReqModal(pre){
  const ms=allMachines();
  openModal(`<h3>Yêu cầu lấy pin / dưỡng đo</h3><datalist id="dlGg">${Object.keys(S.gauges).sort(natural).map(k=>`<option value="${esc(k)}">${esc(S.gauges[k].nom||'')} ${esc(S.gauges[k].model||'')}</option>`).join('')}</datalist><datalist id="dlM">${ms.map(m=>`<option value="${esc(dispName(m))}">`).join('')}</datalist>
@@ -947,6 +947,38 @@ function gGiveModal(r){
   try{await bulkSet(ids.map((g,i)=>({path:'gauge_log/gl_'+r.id+'_'+i,data:{id:'gl_'+r.id+'_'+i,gid:g,type:'OUT',at:t+i,by:who(),byId:myId||null,to:r.by||'',machine:r.machine||'',note:'Yêu cầu '+(r.by||''),reqId:r.id}})));
    await db.doc('inv_req/'+r.id).update({status:'DONE',given:[],gaugesGiven:ids,handler:who(),handlerId:myId||null,doneAt:Date.now(),scanned:true});stopCam();closeModal();toast('Đã xuất '+ids.length+' pin / dưỡng.')}
   catch(x){$('#mok').disabled=false;er.textContent='Lỗi ghi: '+(x.code||x.message||x)}}}
+
+function gParseWB(wb){const out=[],msg=[],seen=new Set();let dup=0,skip=0,newer=0,fixId=0;
+ const T=v=>String(v==null?'':v).replace(/\s+/g,' ').trim(),nv=x=>{const v=gNum(x);return v==null?T(x):v};
+ const want=wb.SheetNames.filter(n=>/^(pin|jig)$/i.test(n.trim())||/thiết bị đo|thiet bi do/i.test(n));
+ want.forEach(sn=>{const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});
+  let h=-1;for(let i=0;i<Math.min(rows.length,12);i++)if(rows[i].some(c=>/quản lý no|số quản lý/i.test(T(c)))){h=i;break}
+  if(h<0){msg.push('Sheet "'+sn+'": không thấy dòng tiêu đề, bỏ qua.');return}
+  const hd=rows[h].map((c,i)=>T(c)+' '+T((rows[h+1]||[])[i])),col=re=>hd.findIndex(c=>re.test(c)),cols=re=>hd.map((c,i)=>re.test(c)?i:-1).filter(i=>i>=0);
+  const dev=col(/phạm vi đo/i)>=0,kind=dev?'DEVICE':/jig/i.test(sn)?'JIG':'PIN';
+  const cId=col(/quản lý no|số quản lý/i),cCal=hd.findIndex(c=>/ngày hiệu chuẩn/i.test(c)&&!/tiếp/i.test(c)),cDue=col(/ngày hiệu chuẩn tiếp/i),cLine=col(/^line/i),notes=cols(/^note/i);
+  const cSize=col(/kích thước pin/i);let n=0;
+  for(let r=h+2;r<rows.length;r++){const R=rows[r];const raw=T(R[cId]);if(!raw)continue;let id=raw.replace(/\s+/g,''),extra='';const mm=/^([A-Za-z0-9_.\-]{1,60})\((.*)\)$/.exec(id);if(mm){id=mm[1];extra=T(raw.slice(raw.indexOf('(')+1,raw.lastIndexOf(')')))}
+   if(!GID_RE.test(id)){skip++;continue}if(id!==raw&&!mm)fixId++;
+   if(seen.has(id)){dup++;continue}seen.add(id);
+   const calAt=parseDateIn(R[cCal]),dueAt=parseDateIn(R[cDue]);let iv=calAt&&dueAt?dayNum(dueAt)-dayNum(calAt):0;if(!(iv>0&&iv<=1000))iv=60;
+   const old=S.gauges[id]||{};if(old.calAt&&calAt&&dayNum(calAt)<dayNum(old.calAt)){newer++;continue}
+   let g;
+   if(dev){const nt=T(R[notes[1]]).toLowerCase();
+    g={kind,name:T(R[col(/dụng cụ đo/i)>=0?col(/dụng cụ đo/i):3]),part:'',serial:T(R[col(/serial/i)]),size:T(R[col(/phạm vi đo/i)]),nom:'',lo:'',hi:'',go:'',no:'',min:'',max:'',owner:T(R[notes[0]]),machine:'',model:'',
+     st:/hủy/.test(nt)?'SCRAP':/ko sd|không sd|khong sd/.test(nt)?'NOUSE':'USE'}}
+   else{const c0=cSize>=0?cSize:6;
+    g={kind,name:T(R[1]),part:T(R[3])||T(R[2]),serial:T(R[col(/sê ri|serial/i)]),size:T(R[c0]),nom:kind==='PIN'?nv(R[c0+1]):'',lo:kind==='PIN'?nv(R[c0+2]):'',hi:kind==='PIN'?nv(R[c0+3]):'',go:kind==='PIN'?nv(R[c0+4]):'',no:kind==='PIN'?nv(R[c0+5]):'',min:kind==='PIN'?nv(R[c0+6]):'',max:kind==='PIN'?nv(R[c0+7]):'',owner:T(R[cLine]),machine:'',model:T(R[notes[0]]),st:'USE'}}
+   const st=g.st;delete g.st;if(extra&&!g.size)g.size=extra;
+   out.push({path:'gauges/'+id,data:{...old,...g,id,calAt,dueAt,interval:iv,status:(old.status&&old.status!=='USE'&&st==='USE')?old.status:st,hist:old.hist||[]}});n++}
+  msg.push('Sheet "'+sn+'" ('+GKIND[kind]+'): '+n+' mã.')});
+ if(out.length){const bs=out.map(x=>gState(x.data));msg.push('Sau khi nhập: '+bs.filter(x=>x==='OVER').length+' quá hạn, '+bs.filter(x=>x==='SOON').length+' sắp hạn (≤7 ngày), '+bs.filter(x=>x==='NOUSE'||x==='SCRAP').length+' không dùng/loại bỏ.');
+  if(dup)msg.push('Bỏ '+dup+' dòng trùng mã (giữ dòng đầu).');if(fixId)msg.push('Tự bỏ khoảng trắng trong '+fixId+' mã.');if(skip)msg.push('Bỏ '+skip+' dòng mã có ký tự không hợp lệ.');if(newer)msg.push('Giữ nguyên '+newer+' mã mà trong app đã có hiệu chuẩn mới hơn file.')}
+ return{list:out,msg}}
+async function gDoImport(){const list=window._gpend,o=$('#gfo');if(!list||!list.length)return;if(!needWho())return;if(!isKeeper()){toast('Chỉ thủ kho được nhập danh sách.');return}
+ const b=document.querySelector('[data-a="gdo"]');if(b)b.disabled=true;
+ try{await bulkSet(list,(a,t)=>{o.textContent='Đang ghi '+a+'/'+t+'…'});window._gpend=null;o.textContent='Đã nhập '+list.length+' dụng cụ.';toast('Đã nhập '+list.length+' dụng cụ.')}
+ catch(e){o.textContent='Lỗi ghi: '+(e.code||e.message||e)+'. Có thể một phần đã ghi, bấm chọn file lại để nhập tiếp.'}}
 function gScanModal(){
  openModal(`<h3>Mượn / trả dụng cụ</h3><datalist id="dlGid">${Object.keys(S.gauges).sort(natural).map(k=>`<option value="${esc(k)}">`).join('')}</datalist>
  <label class="fld" style="margin-top:0">Quét mã dụng cụ hoặc gõ mã<div class="row" style="margin:4px 0 0"><input id="gsc" list="dlGid" autocomplete="off" placeholder="Quét bằng máy quét rồi Enter" style="flex:1;min-width:0"><button type="button" class="btn" id="gcam">📷</button></div></label>${camBox}
@@ -964,8 +996,8 @@ function gLoanModal(id){const g=S.gauges[id];if(!g)return;const h=gHold(id),st=g
   $('#mok').onclick=async()=>{if(!needWho())return;if(!gHold(id)){closeModal();toast('Dụng cụ này đã được trả.');return}$('#mok').disabled=true;
    try{const e=ev('IN',h.to||h.by||'',h.machine||'',$('#gn').value.trim());await db.doc('gauge_log/'+e.id).set(e);closeModal();toast('Đã trả '+id)}
    catch(x){$('#mok').disabled=false;$('#er').textContent='Lỗi ghi: '+(x.code||x.message||x)}};return}
- if(st==='OVER'||st==='REPAIR'||st==='SCRAP'){
-  openModal(`<h3>Không mượn được · ${esc(id)}</h3><div class="err">${st==='OVER'?'Dụng cụ quá hạn hiệu chuẩn '+(-gDays(g))+' ngày (hạn '+esc(g.dueAt)+'). Cần hiệu chuẩn trước khi dùng.':st==='REPAIR'?'Dụng cụ đang sửa.':'Dụng cụ đã loại bỏ.'}</div><div class="row"><button class="btn" id="mc">Đóng</button></div>`);$('#mc').onclick=closeModal;return}
+ if(st==='OVER'||st==='REPAIR'||st==='SCRAP'||st==='NOUSE'){
+  openModal(`<h3>Không mượn được · ${esc(id)}</h3><div class="err">${st==='OVER'?'Dụng cụ quá hạn hiệu chuẩn '+(-gDays(g))+' ngày (hạn '+esc(g.dueAt)+'). Cần hiệu chuẩn trước khi dùng.':st==='REPAIR'?'Dụng cụ đang sửa.':st==='NOUSE'?'Dụng cụ đang để không sử dụng.':'Dụng cụ đã loại bỏ.'}</div><div class="row"><button class="btn" id="mc">Đóng</button></div>`);$('#mc').onclick=closeModal;return}
  openModal(`<h3>Mượn · ${esc(id)} ${gTag(g)}</h3><datalist id="dlGmc2">${allMachines().map(m=>`<option value="${esc(dispName(m))}">`).join('')}</datalist>
   <div class="mute">${esc([g.nom,g.model].filter(Boolean).join(' · '))}</div>
   <label class="fld">Người mượn<input id="gto" maxlength="40" value="${esc(who())}"></label>
@@ -1240,6 +1272,8 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-a]')
   if(a==='hc'){S.hc=t.dataset.k;rr();return}
   if(a==='hscan'){startCam(val=>{S.hq=String(val);const i=$('#hsearch');if(i)i.value=S.hq;setHome();stopCam();$('#hsm').textContent=''},$('#hsm'),'#hcv');return}
   if(a==='gdetail'){gDetail(t.dataset.c);return}
+  if(a==='gk'){S.gk=t.dataset.k;rr();return}
+  if(a==='gdo'){gDoImport();return}
   if(a==='gf'){S.gf=t.dataset.k;rr();return}
   if(a==='gnew'){if(!isKeeper()){toast('Chỉ thủ kho được thêm dụng cụ.');return}gEditModal();return}
   if(a==='gimport'){gImport();return}
@@ -1273,7 +1307,7 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-a]')
     t.disabled=true;let n=0;for(const p of rows){await doIn(p[0],+p[1],p[2]||'');n++}$('#ib').value='';toast('Đã nhập '+n+' dòng.')}catch(x){er.textContent=x.message}t.disabled=false;return}
  }catch(err){toast('Lỗi: '+(err.message||err.code||err))}});
 
-const KHO_A=['directout','tplapply','mcapply','mcdl','hc','hscan','qreq','qin','iscan','kho','kg','kh','kp','item','newreq','givereq','rejreq','kcsv','doin','doinbulk','savecat','gdetail','gf','gnew','gimport','gscan','greq'];
+const KHO_A=['directout','tplapply','mcapply','mcdl','hc','hscan','qreq','qin','iscan','kho','kg','kh','kp','item','newreq','givereq','rejreq','kcsv','doin','doinbulk','savecat','gdetail','gf','gnew','gimport','gscan','greq','gk','gdo'];
 /* ---------- CẬP NHẬT DANH MỤC MÁY / PHỤ TRÁCH / MODEL ---------- */
 function mcCard(){
  return`<div class="card" style="margin-top:10px"><h3>Cập nhật danh mục máy, người phụ trách, model</h3><p class="mute">Dùng khi đổi người phụ trách (2 tuần/lần), đổi nhóm máy hoặc thêm model. Bấm <b>Tải file hiện tại</b> để lấy file Excel đang dùng, sửa rồi tải lên. Có 2 sheet: DM_May (loại máy, nhóm kỹ thuật và nhóm sản lượng theo ca ngày/ca đêm, OP1, sản phẩm; tên nhóm cũng là người phụ trách) và Model_Dao (dao theo model). Sheet nào không có thì bỏ qua. Máy không có trong file được giữ nguyên, không bị xoá.</p>
@@ -1320,16 +1354,16 @@ async function applyCatalog(res){
  if(!Object.keys(upd).length)throw new Error('Không có gì để cập nhật');
  await db.doc('config/main').update(upd)}
 document.addEventListener('change',async e=>{
- if(e.target.id==='gfile'){const f=e.target.files[0];if(!f)return;const o=$('#gfo');
+ if(e.target.id==='gfile'){const f=e.target.files[0];if(!f)return;const o=$('#gfo');window._gpend=null;
   if(!isKeeper()){o.textContent='Chỉ thủ kho được nhập danh sách.';return}
-  if(f.size>5e6){o.textContent='File quá lớn (tối đa 5 MB).';return}
+  if(f.size>8e6){o.textContent='File quá lớn (tối đa 8 MB).';return}
   if(!window.XLSX){o.textContent='Chưa tải được thư viện đọc Excel, kiểm tra mạng hoặc dùng cách dán bên dưới.';return}
-  try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
-   const nm=wb.SheetNames.find(n=>/dụng cụ|dung cu|pin|gauge|đo|kiểm/i.test(n))||wb.SheetNames[0];
-   const rows=XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,raw:true,defval:''}).filter(r=>r.some(x=>String(x).trim()));
-   const q=v=>{v=String(v==null?'':v);return/[\t\n\r"]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
-   $('#gimp').value=rows.map(r=>r.map(q).join('\t')).join('\n');
-   o.textContent='Đã đọc '+rows.length+' dòng từ sheet "'+nm+'". Kiểm tra bên dưới rồi bấm Nhập.'}
+  try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});const res=gParseWB(wb);
+   if(res.list.length){window._gpend=res.list;o.innerHTML='<div class="card" style="padding:8px 10px;margin-top:6px">'+res.msg.map(esc).join('<br>')+'<div class="row"><button class="btn primary big" data-a="gdo">Nhập '+res.list.length+' dụng cụ</button></div></div>'}
+   else{const nm=wb.SheetNames[0];const rows=XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,raw:true,defval:''}).filter(r=>r.some(x=>String(x).trim()));
+    const q=v=>{v=String(v==null?'':v);return/[\t\n\r"]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+    $('#gimp').value=rows.map(r=>r.map(q).join('\t')).join('\n');
+    o.textContent=(res.msg.join(' ')+' ')+'Đã đọc '+rows.length+' dòng từ sheet "'+nm+'" vào ô bên dưới. Kiểm tra rồi bấm Nhập.'}}
   catch(x){o.textContent='Không đọc được file: '+(x.message||x)}
   e.target.value='';return}
  if(e.target.id!=='mcfile')return;const f=e.target.files[0];if(!f)return;const out=$('#mcout');
