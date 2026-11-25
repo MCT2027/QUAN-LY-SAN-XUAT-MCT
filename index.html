@@ -818,7 +818,7 @@ function invGauge(){const c=gCounts(),keeper=isKeeper();
  <input id="gsearch" placeholder="Tìm mã, model, máy, người quản lý…" value="${esc(S.gq)}" style="width:100%;margin-bottom:6px" autocomplete="off">
  <div class="row" style="margin:0 0 6px">${canWrite?'<button class="btn run" data-a="gscan">📷 Quét mượn / trả</button>':''}${canWrite&&!keeper?'<button class="btn primary" data-a="greq">📐 Yêu cầu lấy pin</button>':''}${keeper?'<button class="btn primary" data-a="gnew">+ Thêm dụng cụ</button>':''}</div>
  <div class="card" id="glist" style="padding:4px 8px">${gRows()}</div>
- ${keeper?`<details class="kd" style="margin-top:8px"><summary>Nhập danh sách từ Excel</summary><p class="mute">Copy các dòng từ Excel rồi dán vào đây. Thứ tự cột: Quản lý No. | Kích thước pin | Spec (Ø) | Dung sai − | Dung sai + | Go | No | Min | Max | Người quản lý | Máy | Model | (Hạn sử dụng, có hoặc không) | Ngày hiệu chuẩn | Ngày hiệu chuẩn tiếp. Mã trùng sẽ được cập nhật, lịch sử hiệu chuẩn được giữ.</p><textarea id="gimp" placeholder="LMSV-QTVM-N50	10.2 (±1)	Ø10.20	-0.1	+0.10	10.10	10.30	10.117	10.291	a hưởng		v710 Front	- 2	2026-09-24	2026-11-23"></textarea><div class="err" id="gerr"></div><div class="row"><button class="btn primary" data-a="gimport">Nhập danh sách</button></div></details>`:''}
+ ${keeper?`<details class="kd" style="margin-top:8px"><summary>Nhập danh sách từ Excel</summary><p class="mute">Copy các dòng từ Excel rồi dán vào đây. Thứ tự cột: Quản lý No. | Kích thước pin | Spec (Ø) | Dung sai − | Dung sai + | Go | No | Min | Max | Người quản lý | Máy | Model | (Hạn sử dụng, có hoặc không) | Ngày hiệu chuẩn | Ngày hiệu chuẩn tiếp. Mã trùng sẽ được cập nhật, lịch sử hiệu chuẩn được giữ.</p><input type="file" id="gfile" accept=".xlsx,.xls,.csv" style="width:100%;margin:6px 0"><div class="mute" id="gfo"></div><textarea id="gimp" placeholder="LMSV-QTVM-N50	10.2 (±1)	Ø10.20	-0.1	+0.10	10.10	10.30	10.117	10.291	a hưởng		v710 Front	- 2	2026-09-24	2026-11-23"></textarea><div class="err" id="gerr"></div><div class="row"><button class="btn primary" data-a="gimport">Nhập danh sách</button></div></details>`:''}
  <p class="mute">Hạn hiệu chuẩn tiếp theo = ngày hiệu chuẩn + chu kỳ (mặc định 60 ngày). Thủ kho bấm "Hiệu chuẩn xong" để ghi kết quả mới.</p>`}
 function parseTSV(t){const rows=[];let r=[],c='',q=false;t=String(t||'').replace(/\r/g,'');
  for(let i=0;i<t.length;i++){const ch=t[i];
@@ -1320,6 +1320,18 @@ async function applyCatalog(res){
  if(!Object.keys(upd).length)throw new Error('Không có gì để cập nhật');
  await db.doc('config/main').update(upd)}
 document.addEventListener('change',async e=>{
+ if(e.target.id==='gfile'){const f=e.target.files[0];if(!f)return;const o=$('#gfo');
+  if(!isKeeper()){o.textContent='Chỉ thủ kho được nhập danh sách.';return}
+  if(f.size>5e6){o.textContent='File quá lớn (tối đa 5 MB).';return}
+  if(!window.XLSX){o.textContent='Chưa tải được thư viện đọc Excel, kiểm tra mạng hoặc dùng cách dán bên dưới.';return}
+  try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+   const nm=wb.SheetNames.find(n=>/dụng cụ|dung cu|pin|gauge|đo|kiểm/i.test(n))||wb.SheetNames[0];
+   const rows=XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,raw:true,defval:''}).filter(r=>r.some(x=>String(x).trim()));
+   const q=v=>{v=String(v==null?'':v);return/[\t\n\r"]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+   $('#gimp').value=rows.map(r=>r.map(q).join('\t')).join('\n');
+   o.textContent='Đã đọc '+rows.length+' dòng từ sheet "'+nm+'". Kiểm tra bên dưới rồi bấm Nhập.'}
+  catch(x){o.textContent='Không đọc được file: '+(x.message||x)}
+  e.target.value='';return}
  if(e.target.id!=='mcfile')return;const f=e.target.files[0];if(!f)return;const out=$('#mcout');
  if(!window.XLSX){out.textContent='Chưa tải được thư viện đọc Excel, kiểm tra mạng.';return}
  try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'}),res=parseCatalog(wb);window._mc=res;const cfg=S.cfg,L=[];
